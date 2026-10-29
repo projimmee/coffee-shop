@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>👨‍💼 ผู้ขาย - Coffee Shop</title>
+  <link rel="stylesheet" href="style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="nav-brand">
+      <span class="logo">☕</span>
+      <span class="brand-name">Coffee Shop</span>
+      <span class="admin-badge">ผู้ขาย</span>
+    </div>
+    <div class="nav-links">
+      <a href="index.html">หน้าผู้ซื้อ</a>
+      <a href="admin.html" class="active">แดชบอร์ด</a>
+    </div>
+  </nav>
+
+  <!-- Login Screen -->
+  <div id="login-screen" class="login-screen">
+    <div class="login-box">
+      <h2>🔐 เข้าสู่ระบบผู้ขาย</h2>
+      <p>รหัสผ่านเริ่มต้น: <code>admin123</code></p>
+      <div class="form-group">
+        <input type="password" id="admin-password" placeholder="รหัสผ่าน" />
+      </div>
+      <button id="login-btn" class="btn btn-primary btn-block">เข้าสู่ระบบ</button>
+      <p id="login-error" class="error-text" style="display:none;">รหัสผ่านไม่ถูกต้อง</p>
+    </div>
+  </div>
+
+  <!-- Admin Dashboard -->
+  <div id="admin-dashboard" style="display:none;">
+    <div class="admin-header">
+      <h1>แดชบอร์ดผู้ขาย</h1>
+      <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
+        <button id="reset-all-btn" class="btn btn-danger btn-sm">🗑️ รีเซ็ตทั้งหมด</button>
+        <button id="logout-btn" class="btn btn-outline">ออกจากระบบ</button>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="orders">📋 ออเดอร์</button>
+      <button class="tab-btn" data-tab="products">📦 จัดการสินค้า</button>
+      <button class="tab-btn" data-tab="add-product">➕ เพิ่มสินค้า</button>
+    </div>
+
+    <!-- Orders Tab - Live Board -->
+    <section id="tab-orders" class="tab-content active">
+      <div class="section-header">
+        <div class="live-header">
+          <h2>📋 ออเดอร์สด</h2>
+          <span id="live-indicator" class="live-indicator">
+            <span class="live-dot"></span> สด
+          </span>
+          <span id="last-sync" class="last-sync">กำลังเชื่อมต่อ...</span>
+        </div>
+        <div class="order-filters">
+          <button class="status-filter active" data-status="all">ทั้งหมด</button>
+          <button class="status-filter" data-status="pending">รอทำ</button>
+          <button class="status-filter" data-status="preparing">กำลังทำ</button>
+          <button class="status-filter" data-status="completed">สำเร็จ</button>
+          <button class="status-filter" data-status="cancelled">ยกเลิก</button>
+        </div>
+      </div>
+      <div id="orders-stats" class="orders-stats">
+        <div class="stat-card stat-pending">
+          <div class="stat-num" id="stat-pending">0</div>
+          <div class="stat-label">รอทำ</div>
+        </div>
+        <div class="stat-card stat-preparing">
+          <div class="stat-num" id="stat-preparing">0</div>
+          <div class="stat-label">กำลังทำ</div>
+        </div>
+        <div class="stat-card stat-completed">
+          <div class="stat-num" id="stat-completed">0</div>
+          <div class="stat-label">สำเร็จ</div>
+        </div>
+        <div class="stat-card stat-total">
+          <div class="stat-num" id="stat-total">0</div>
+          <div class="stat-label">ทั้งหมดวันนี้</div>
+        </div>
+      </div>
+      <div id="orders-list" class="orders-list">
+        <!-- Orders rendered here -->
+      </div>
+    </section>
+
+    <!-- Products Tab -->
+    <section id="tab-products" class="tab-content">
+      <div class="section-header">
+        <h2>รายการสินค้า</h2>
+      </div>
+      <div id="admin-product-list" class="admin-product-list">
+        <!-- Products for admin -->
+      </div>
+    </section>
+
+    <!-- Add Product Tab -->
+    <section id="tab-add-product" class="tab-content">
+      <div class="form-card">
+        <h2 id="form-title">➕ เพิ่มสินค้าใหม่</h2>
+        <form id="product-form">
+          <input type="hidden" id="edit-id" />
+          <div class="form-row">
+            <div class="form-group">
+              <label>ชื่อสินค้า *</label>
+              <input type="text" id="product-name" required placeholder="เช่น กาแฟลาเต้" />
+            </div>
+            <div class="form-group">
+              <label>ราคา (บาท) *</label>
+              <input type="number" id="product-price" required min="1" placeholder="65" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>หมวดหมู่ *</label>
+            <select id="product-category" required>
+              <option value="กาแฟ">กาแฟ</option>
+              <option value="ชา">ชา</option>
+              <option value="ของหวาน">ของหวาน</option>
+              <option value="เครื่องดื่มอื่นๆ">เครื่องดื่มอื่นๆ</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>รายละเอียด</label>
+            <textarea id="product-desc" rows="2" placeholder="คำอธิบายสั้น ๆ"></textarea>
+          </div>
+          <div class="form-group">
+            <label>URL รูปภาพ (ถ้ามี)</label>
+            <input type="url" id="product-image" placeholder="https://example.com/image.jpg" />
+            <small>ถ้าไม่ใส่จะใช้ไอคอนแทน</small>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary" id="submit-product">บันทึกสินค้า</button>
+            <button type="button" class="btn btn-outline" id="cancel-edit" style="display:none;">ยกเลิกแก้ไข</button>
+          </div>
+        </form>
+      </div>
+    </section>
+  </div>
+
+  <!-- Order Detail Modal -->
+  <div id="order-detail-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>รายละเอียดออเดอร์</h2>
+        <button class="close-btn" id="close-order-detail">&times;</button>
+      </div>
+      <div id="order-detail-body">
+        <!-- Detail content -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="app.js"></script>
+  <script>
+    // Admin specific init
+    document.addEventListener('DOMContentLoaded', () => {
+      initAdmin();
+    });
+  </script>
+</body>
+</html>

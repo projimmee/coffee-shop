@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>☕ Coffee Shop - ร้านกาแฟ</title>
+  <link rel="stylesheet" href="style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="nav-brand">
+      <span class="logo">☕</span>
+      <span class="brand-name">Coffee Shop</span>
+    </div>
+    <div class="nav-links">
+      <a href="index.html" class="active">หน้าหลัก</a>
+      <a href="#" id="cart-btn" class="cart-link">
+        🛒 ตะกร้า <span id="cart-count" class="badge">0</span>
+      </a>
+      <a href="#" id="track-btn" class="track-link">📦 ติดตามออเดอร์</a>
+      <a href="admin.html" class="admin-link">👨‍💼 ผู้ขาย</a>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <header class="hero">
+    <div class="hero-content">
+      <h1>ยินดีต้อนรับสู่ Coffee Shop</h1>
+      <p>กาแฟคุณภาพ หอมกรุ่น ทุกแก้วที่คุณดื่ม</p>
+    </div>
+  </header>
+
+  <!-- Category Filter -->
+  <section class="filters">
+    <button class="filter-btn active" data-category="all">ทั้งหมด</button>
+    <button class="filter-btn" data-category="กาแฟ">กาแฟ</button>
+    <button class="filter-btn" data-category="ชา">ชา</button>
+    <button class="filter-btn" data-category="ของหวาน">ของหวาน</button>
+    <button class="filter-btn" data-category="เครื่องดื่มอื่นๆ">เครื่องดื่มอื่นๆ</button>
+  </section>
+
+  <!-- Product Grid -->
+  <main class="container">
+    <div id="product-grid" class="product-grid">
+      <!-- Products will be rendered here -->
+    </div>
+  </main>
+
+  <!-- Cart Modal -->
+  <div id="cart-modal" class="modal">
+    <div class="modal-content cart-modal">
+      <div class="modal-header">
+        <h2>🛒 ตะกร้าสินค้า</h2>
+        <button class="close-btn" id="close-cart">&times;</button>
+      </div>
+      <div id="cart-items" class="cart-items">
+        <!-- Cart items -->
+      </div>
+      <div class="cart-footer">
+        <div class="cart-total">
+          รวมทั้งสิ้น: <strong id="cart-total">0</strong> บาท
+        </div>
+        <button id="checkout-btn" class="btn btn-primary" disabled>ยืนยันการสั่งซื้อ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Checkout Modal -->
+  <div id="checkout-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>📝 กรอกข้อมูลการสั่งซื้อ</h2>
+        <button class="close-btn" id="close-checkout">&times;</button>
+      </div>
+      <form id="checkout-form">
+        <div class="form-group">
+          <label>ชื่อลูกค้า *</label>
+          <input type="text" id="customer-name" required placeholder="เช่น คุณสมชาย" />
+        </div>
+        <div class="form-group">
+          <label>เบอร์โทร *</label>
+          <input type="tel" id="customer-phone" required placeholder="08x-xxx-xxxx" />
+        </div>
+        <div class="form-group">
+          <label>หมายเหตุ (ถ้ามี)</label>
+          <textarea id="customer-note" rows="2" placeholder="เช่น ไม่ใส่น้ำตาล, เพิ่มนม"></textarea>
+        </div>
+        <div class="order-summary">
+          <h4>สรุปรายการ</h4>
+          <div id="checkout-summary"></div>
+          <div class="total-line">รวม: <strong id="checkout-total">0</strong> บาท</div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">ยืนยันสั่งซื้อ</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Order Success Modal -->
+  <div id="success-modal" class="modal">
+    <div class="modal-content success-content">
+      <div class="success-icon">✅</div>
+      <h2>สั่งซื้อสำเร็จ!</h2>
+      <p>หมายเลขออเดอร์: <strong id="order-id-display"></strong></p>
+      <p style="font-size:0.9rem; color:var(--text-muted); margin:0.5rem 0 1rem;">บันทึกหมายเลขนี้ไว้เพื่อติดตามสถานะได้</p>
+      <p>ขอบคุณที่อุดหนุนร้านเรา ☕</p>
+      <div style="display:flex; gap:0.6rem; justify-content:center; margin-top:1.2rem; flex-wrap:wrap;">
+        <button class="btn btn-primary" id="close-success">ตกลง</button>
+        <button class="btn btn-outline" id="track-from-success">📦 ติดตามออเดอร์</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Add to Cart with Note Modal -->
+  <div id="note-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>✏️ เพิ่มลงตะกร้า</h2>
+        <button class="close-btn" id="close-note">&times;</button>
+      </div>
+      <div class="note-body">
+        <div id="note-product-preview" class="note-product-preview">
+          <!-- product info -->
+        </div>
+        <div class="form-group">
+          <label>จำนวน</label>
+          <div class="qty-selector">
+            <button type="button" class="qty-btn" id="note-qty-minus">−</button>
+            <span id="note-qty-value">1</span>
+            <button type="button" class="qty-btn" id="note-qty-plus">+</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>หมายเหตุ (ถ้ามี)</label>
+          <textarea id="item-note" rows="2" placeholder="เช่น ไม่ใส่น้ำตาล, เพิ่มนม, ไม่ใส่น้ำแข็ง"></textarea>
+        </div>
+        <div class="note-quick-tags">
+          <button type="button" class="quick-tag" data-note="ไม่ใส่น้ำตาล">ไม่ใส่น้ำตาล</button>
+          <button type="button" class="quick-tag" data-note="เพิ่มนม">เพิ่มนม</button>
+          <button type="button" class="quick-tag" data-note="ไม่ใส่น้ำแข็ง">ไม่ใส่น้ำแข็ง</button>
+          <button type="button" class="quick-tag" data-note="หวานน้อย">หวานน้อย</button>
+          <button type="button" class="quick-tag" data-note="ร้อน">ร้อน</button>
+          <button type="button" class="quick-tag" data-note="เย็น">เย็น</button>
+        </div>
+        <button id="confirm-add-cart" class="btn btn-primary btn-block" style="margin-top:1rem;">🛒 ใส่ตะกร้า</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Track Order Modal -->
+  <div id="track-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>📦 ติดตามสถานะออเดอร์</h2>
+        <button class="close-btn" id="close-track">&times;</button>
+      </div>
+      <div class="track-body">
+        <div class="form-group">
+          <label>หมายเลขออเดอร์</label>
+          <input type="text" id="track-order-id" placeholder="เช่น 001, 042, 999" />
+        </div>
+        <button id="track-search-btn" class="btn btn-primary btn-block">ค้นหา</button>
+        <div id="track-result" class="track-result" style="display:none;">
+          <!-- result will show here -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <p>© 2025 Coffee Shop | ระบบจัดการร้านกาแฟ</p>
+  </footer>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
