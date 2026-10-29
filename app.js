@@ -682,6 +682,7 @@ function showAdminDashboard() {
     startRealtimeSync();
     startOrdersPolling();
   }
+  updatePromptPayPreview();
 }
 
 function setupTabs() {
@@ -692,6 +693,9 @@ function setupTabs() {
       btn.classList.add('active');
       const tabId = `tab-${btn.dataset.tab}`;
       document.getElementById(tabId)?.classList.add('active');
+      if (btn.dataset.tab === 'settings') {
+        updatePromptPayPreview();
+      }
     });
   });
 }
@@ -939,25 +943,51 @@ function completeOrderWithReceipt(orderId) {
 }
 
 function getPromptPayImage() {
-  return localStorage.getItem(STORAGE_KEYS.promptpay) || '';
+  try {
+    return localStorage.getItem(STORAGE_KEYS.promptpay) || '';
+  } catch (e) {
+    console.error('getPromptPayImage:', e);
+    return '';
+  }
 }
 
 function savePromptPayImage(dataUrl) {
-  if (dataUrl) {
-    localStorage.setItem(STORAGE_KEYS.promptpay, dataUrl);
-  } else {
-    localStorage.removeItem(STORAGE_KEYS.promptpay);
+  try {
+    if (dataUrl) {
+      localStorage.setItem(STORAGE_KEYS.promptpay, dataUrl);
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.promptpay);
+    }
+  } catch (e) {
+    console.error('savePromptPayImage:', e);
+    // ถ้าเต็ม localStorage ลองย่ออีกครั้ง
+    if (dataUrl && dataUrl.length > 100000) {
+      try {
+        // เก็บแบบย่อพิเศษผ่าน canvas อีกครั้งทำใน caller
+        alert('พื้นที่จัดเก็บเต็ม กรุณาใช้รูปที่เล็กกว่านี้ (แนะนำต่ำกว่า 500KB)');
+        return false;
+      } catch (e2) {
+        alert('บันทึกรูปไม่สำเร็จ: ' + (e.message || e));
+        return false;
+      }
+    }
+    alert('บันทึกรูปไม่สำเร็จ: ' + (e.message || e));
+    return false;
   }
   updatePromptPayPreview();
+  return true;
 }
 
 function updatePromptPayPreview() {
   const preview = document.getElementById('promptpay-preview');
   const clearBtn = document.getElementById('clear-promptpay-btn');
   const src = getPromptPayImage();
-  if (!preview) return;
+  if (!preview) {
+    console.warn('promptpay-preview element not found');
+    return;
+  }
   if (src) {
-    preview.innerHTML = `<img src="${src}" alt="PromptPay QR">`;
+    preview.innerHTML = `<img src="${src}" alt="PromptPay QR" style="width:100%;height:100%;object-fit:contain;display:block;">`;
     if (clearBtn) clearBtn.style.display = 'inline-flex';
   } else {
     preview.innerHTML = '<span class="preview-placeholder">ยังไม่มีรูปพร้อมเพย์</span>';
@@ -966,24 +996,54 @@ function updatePromptPayPreview() {
 }
 
 function handlePromptPayUpload(e) {
-  const file = e.target.files && e.target.files[0];
+  const input = e.target || document.getElementById('promptpay-file');
+  const file = input && input.files && input.files[0];
   if (!file) return;
+
   if (!file.type.startsWith('image/')) {
-    alert('กรุณาเลือกไฟล์รูปภาพ');
-    e.target.value = '';
+    alert('กรุณาเลือกไฟล์รูปภาพ (JPG, PNG, WEBP)');
+    input.value = '';
     return;
   }
-  if (file.size > 1.5 * 1024 * 1024) {
-    alert('ไฟล์ใหญ่เกินไป (แนะนำไม่เกิน 1.5MB)');
-    e.target.value = '';
+
+  // ยอมรับไฟล์ใหญ่ขึ้น แล้วค่อยย่อ
+  if (file.size > 5 * 1024 * 1024) {
+    alert('ไฟล์ใหญ่เกินไป (สูงสุด 5MB)');
+    input.value = '';
     return;
   }
+
   const reader = new FileReader();
   reader.onload = () => {
-    compressImageIfNeeded(reader.result, 500, 0.8).then(src => {
-      savePromptPayImage(src);
-      alert('บันทึกรูปพร้อมเพย์เรียบร้อย');
+    // ย่อรูป QR ให้ชัดแต่ไม่ใหญ่เกิน (max 400px, quality 0.7)
+    compressImageIfNeeded(reader.result, 400, 0.7).then(src => {
+      // ถ้ายังใหญ่ ย่ออีก
+      const finalize = (finalSrc) => {
+        const ok = savePromptPayImage(finalSrc);
+        if (ok !== false) {
+          // สลับไปแท็บตั้งค่าเพื่อให้เห็นพรีวิว
+          document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+          document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+          document.querySelector('[data-tab="settings"]')?.classList.add('active');
+          document.getElementById('tab-settings')?.classList.add('active');
+          updatePromptPayPreview();
+          alert('บันทึกรูปพร้อมเพย์เรียบร้อย');
+        }
+      };
+
+      if (src.length > 400000) {
+        compressImageIfNeeded(src, 300, 0.6).then(finalize);
+      } else {
+        finalize(src);
+      }
+    }).catch(err => {
+      console.error(err);
+      alert('ประมวลผลรูปไม่สำเร็จ');
     });
+  };
+  reader.onerror = () => {
+    alert('อ่านไฟล์ไม่สำเร็จ');
+    input.value = '';
   };
   reader.readAsDataURL(file);
 }
@@ -993,6 +1053,7 @@ function clearPromptPay() {
   savePromptPayImage('');
   const input = document.getElementById('promptpay-file');
   if (input) input.value = '';
+  updatePromptPayPreview();
 }
 
 function showReceipt(orderId) {

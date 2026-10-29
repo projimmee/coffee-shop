@@ -181,14 +181,11 @@
           <div id="promptpay-preview" class="image-preview promptpay-preview-box">
             <span class="preview-placeholder">ยังไม่มีรูปพร้อมเพย์</span>
           </div>
-          <div class="image-upload-controls">
-            <label class="btn btn-outline btn-sm file-upload-btn">
-              📷 อัปโหลดรูปพร้อมเพย์
-              <input type="file" id="promptpay-file" accept="image/*" hidden />
-            </label>
+          <div class="image-upload-controls" style="flex-direction:column; align-items:flex-start; gap:0.6rem;">
+            <input type="file" id="promptpay-file" accept="image/png,image/jpeg,image/jpg,image/webp,image/gif" />
             <button type="button" id="clear-promptpay-btn" class="btn btn-outline btn-sm" style="display:none;">ลบรูป</button>
           </div>
-          <small>แนะนำรูป QR ชัด ๆ ขนาดไม่เกิน 1.5MB</small>
+          <small>เลือกไฟล์รูป QR พร้อมเพย์ (JPG/PNG) แนะนำไม่เกิน 1MB</small>
         </div>
       </div>
     </section>
