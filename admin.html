@@ -48,6 +48,7 @@
     <div class="tabs">
       <button class="tab-btn active" data-tab="orders">📋 ออเดอร์</button>
       <button class="tab-btn" data-tab="products">📦 จัดการสินค้า</button>
+      <button class="tab-btn" data-tab="settings">⚙️ ตั้งค่า</button>
     </div>
 
     <!-- Orders Tab - Live Board -->
@@ -163,6 +164,32 @@
 
       <div id="admin-product-list" class="admin-product-list">
         <!-- Products for admin -->
+      </div>
+    </section>
+
+    <!-- Settings Tab -->
+    <section id="tab-settings" class="tab-content">
+      <div class="section-header">
+        <h2>⚙️ ตั้งค่าร้าน</h2>
+      </div>
+      <div class="form-card">
+        <h2>📱 รูป PromptPay / QR ชำระเงิน</h2>
+        <p style="color:var(--text-muted); font-size:0.92rem; margin-bottom:1rem;">
+          อัปโหลดรูป QR พร้อมเพย์ จะแสดงท้ายใบเสร็จเมื่อพิมพ์
+        </p>
+        <div class="image-upload-area">
+          <div id="promptpay-preview" class="image-preview promptpay-preview-box">
+            <span class="preview-placeholder">ยังไม่มีรูปพร้อมเพย์</span>
+          </div>
+          <div class="image-upload-controls">
+            <label class="btn btn-outline btn-sm file-upload-btn">
+              📷 อัปโหลดรูปพร้อมเพย์
+              <input type="file" id="promptpay-file" accept="image/*" hidden />
+            </label>
+            <button type="button" id="clear-promptpay-btn" class="btn btn-outline btn-sm" style="display:none;">ลบรูป</button>
+          </div>
+          <small>แนะนำรูป QR ชัด ๆ ขนาดไม่เกิน 1.5MB</small>
+        </div>
       </div>
     </section>
   </div>

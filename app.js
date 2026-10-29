@@ -5,7 +5,8 @@ const STORAGE_KEYS = {
   products: 'coffee_products',
   orders: 'coffee_orders',
   cart: 'coffee_cart',
-  adminAuth: 'coffee_admin_auth'
+  adminAuth: 'coffee_admin_auth',
+  promptpay: 'coffee_promptpay'
 };
 
 const DEFAULT_PRODUCTS = [
@@ -773,10 +774,13 @@ function renderOrders() {
     let actionBtns = '';
     if (o.status === 'pending') {
       actionBtns = `<button class="btn btn-primary btn-sm" onclick="updateOrderStatus('${o.id}', 'preparing')">เริ่มทำ</button>`;
+      actionBtns += `<button class="btn btn-outline btn-sm" onclick="showReceipt('${o.id}')">🧾 ใบเสร็จ</button>`;
     } else if (o.status === 'preparing') {
       actionBtns = `<button class="btn btn-primary btn-sm" onclick="updateOrderStatus('${o.id}', 'shipping')">จัดส่ง</button>`;
+      actionBtns += `<button class="btn btn-outline btn-sm" onclick="showReceipt('${o.id}')">🧾 ใบเสร็จ</button>`;
     } else if (o.status === 'shipping') {
       actionBtns = `<button class="btn btn-primary btn-sm" onclick="completeOrderWithReceipt('${o.id}')">เสร็จแล้ว</button>`;
+      actionBtns += `<button class="btn btn-outline btn-sm" onclick="showReceipt('${o.id}')">🧾 ใบเสร็จ</button>`;
     } else if (o.status === 'completed') {
       actionBtns = `<button class="btn btn-outline btn-sm" onclick="showReceipt('${o.id}')">🧾 ใบเสร็จ</button>`;
     }
@@ -852,7 +856,8 @@ function viewOrderDetail(orderId) {
   if (order.status === 'shipping') {
     actionBtns += `<button class="btn btn-primary btn-sm" onclick="completeOrderWithReceipt('${order.id}')">เสร็จแล้ว</button>`;
   }
-  if (order.status === 'completed') {
+  // ปุ่มใบเสร็จใช้ได้ทุสถานะยกเว้นยกเลิก
+  if (order.status !== 'cancelled') {
     actionBtns += `<button class="btn btn-outline btn-sm" onclick="showReceipt('${order.id}')">🧾 ใบเสร็จ</button>`;
   }
   if (order.status !== 'completed' && order.status !== 'cancelled') {
@@ -911,6 +916,17 @@ function updateOrderStatus(orderId, newStatus) {
   });
 }
 
+function startOrderAndReceipt(orderId) {
+  updateOrderInFirebase(orderId, { status: 'preparing' }).then(() => {
+    const orders = getOrders();
+    const order = orders.find(o => o.id === orderId);
+    if (order) order.status = 'preparing';
+    renderOrders();
+    closeOrderDetail();
+    showReceipt(orderId);
+  });
+}
+
 function completeOrderWithReceipt(orderId) {
   updateOrderInFirebase(orderId, { status: 'completed' }).then(() => {
     const orders = getOrders();
@@ -920,6 +936,63 @@ function completeOrderWithReceipt(orderId) {
     closeOrderDetail();
     showReceipt(orderId);
   });
+}
+
+function getPromptPayImage() {
+  return localStorage.getItem(STORAGE_KEYS.promptpay) || '';
+}
+
+function savePromptPayImage(dataUrl) {
+  if (dataUrl) {
+    localStorage.setItem(STORAGE_KEYS.promptpay, dataUrl);
+  } else {
+    localStorage.removeItem(STORAGE_KEYS.promptpay);
+  }
+  updatePromptPayPreview();
+}
+
+function updatePromptPayPreview() {
+  const preview = document.getElementById('promptpay-preview');
+  const clearBtn = document.getElementById('clear-promptpay-btn');
+  const src = getPromptPayImage();
+  if (!preview) return;
+  if (src) {
+    preview.innerHTML = `<img src="${src}" alt="PromptPay QR">`;
+    if (clearBtn) clearBtn.style.display = 'inline-flex';
+  } else {
+    preview.innerHTML = '<span class="preview-placeholder">ยังไม่มีรูปพร้อมเพย์</span>';
+    if (clearBtn) clearBtn.style.display = 'none';
+  }
+}
+
+function handlePromptPayUpload(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) {
+    alert('กรุณาเลือกไฟล์รูปภาพ');
+    e.target.value = '';
+    return;
+  }
+  if (file.size > 1.5 * 1024 * 1024) {
+    alert('ไฟล์ใหญ่เกินไป (แนะนำไม่เกิน 1.5MB)');
+    e.target.value = '';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    compressImageIfNeeded(reader.result, 500, 0.8).then(src => {
+      savePromptPayImage(src);
+      alert('บันทึกรูปพร้อมเพย์เรียบร้อย');
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearPromptPay() {
+  if (!confirm('ลบรูปพร้อมเพย์ใช่หรือไม่?')) return;
+  savePromptPayImage('');
+  const input = document.getElementById('promptpay-file');
+  if (input) input.value = '';
 }
 
 function showReceipt(orderId) {
@@ -939,6 +1012,15 @@ function showReceipt(orderId) {
     </tr>
   `).join('');
 
+  const promptpay = getPromptPayImage();
+  const promptpayHtml = promptpay
+    ? `<div class="receipt-promptpay">
+         <p>ชำระเงินผ่าน PromptPay</p>
+         <img src="${promptpay}" alt="PromptPay QR">
+         <p class="promptpay-amount">ยอดชำระ ${formatPrice(order.total)} บาท</p>
+       </div>`
+    : '';
+
   body.innerHTML = `
     <div class="receipt-paper" id="receipt-print-area">
       <div class="receipt-header">
@@ -952,6 +1034,7 @@ function showReceipt(orderId) {
         <div><span>ลูกค้า</span><strong>${order.customerName}</strong></div>
         <div><span>เบอร์โทร</span><strong>${order.customerPhone}</strong></div>
         ${order.deliveryLocation ? `<div><span>จัดส่งที่</span><strong>${order.deliveryLocation}</strong></div>` : ''}
+        <div><span>สถานะ</span><strong>${STATUS_LABELS[order.status] || order.status}</strong></div>
       </div>
       <table class="receipt-table">
         <thead>
@@ -971,6 +1054,7 @@ function showReceipt(orderId) {
         <span>ยอดรวมทั้งสิ้น</span>
         <strong>${formatPrice(order.total)} บาท</strong>
       </div>
+      ${promptpayHtml}
       <div class="receipt-footer">
         <p>ขอบคุณที่อุดหนุน ☕</p>
         <p class="receipt-date-print">พิมพ์เมื่อ ${new Date().toLocaleString('th-TH')}</p>
@@ -1015,6 +1099,10 @@ function printReceipt() {
           border-top: 2px dashed #ccc; padding-top: 10px; margin-top: 8px; }
         .receipt-footer { text-align: center; margin-top: 20px; color: #666; font-size: 0.85rem; }
         .receipt-date-print { font-size: 0.75rem; margin-top: 4px; }
+        .receipt-promptpay { text-align: center; margin-top: 16px; padding-top: 12px; border-top: 2px dashed #ccc; }
+        .receipt-promptpay p { margin: 4px 0; font-size: 0.9rem; }
+        .receipt-promptpay img { width: 160px; height: 160px; object-fit: contain; margin: 8px 0; }
+        .promptpay-amount { font-weight: 700; font-size: 1rem !important; }
         small { color: #888; }
       </style>
     </head><body>
@@ -1695,6 +1783,9 @@ function initAdmin() {
   document.getElementById('close-receipt')?.addEventListener('click', closeReceipt);
   document.getElementById('close-receipt-btn')?.addEventListener('click', closeReceipt);
   document.getElementById('print-receipt-btn')?.addEventListener('click', printReceipt);
+  document.getElementById('promptpay-file')?.addEventListener('change', handlePromptPayUpload);
+  document.getElementById('clear-promptpay-btn')?.addEventListener('click', clearPromptPay);
+  updatePromptPayPreview();
 
   document.querySelectorAll('.modal').forEach(modal => {
     modal.addEventListener('click', (e) => {
