@@ -2,7 +2,7 @@
 <html lang="th">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>☕ Coffee Shop - ร้านกาแฟ</title>
   <link rel="stylesheet" href="style.css" />
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
@@ -80,8 +80,33 @@
           <input type="tel" id="customer-phone" required placeholder="08x-xxx-xxxx" />
         </div>
         <div class="form-group">
-          <label>สถานที่จัดส่ง *</label>
-          <input type="text" id="customer-location" required placeholder="เช่น โต๊ะ 5, หน้าร้าน, อาคาร A ชั้น 2" />
+          <label>วิธีรับสินค้า *</label>
+          <div class="delivery-type-toggle" id="delivery-type-toggle">
+            <button type="button" class="delivery-type-btn active" data-type="pickup">
+              🏪 รับที่ร้าน
+            </button>
+            <button type="button" class="delivery-type-btn" data-type="delivery">
+              🛵 บริการจัดส่ง
+            </button>
+          </div>
+          <input type="hidden" id="delivery-type" value="pickup" />
+        </div>
+        <div class="form-group" id="location-group">
+          <label id="location-label">จุดรับที่ร้าน</label>
+          <input type="text" id="customer-location" placeholder="เช่น โต๊ะ 5, หน้าร้าน, เคาน์เตอร์" />
+          <div id="delivery-map-actions" class="delivery-map-actions" style="display:none;">
+            <button type="button" id="pin-location-btn" class="btn btn-outline btn-block" style="margin-top:0.6rem;">
+              📍 ปักหมุดที่อยู่บนแผนที่
+            </button>
+            <div id="pinned-location-info" class="pinned-location-info" style="display:none;">
+              <div class="pinned-coords" id="pinned-coords-text"></div>
+              <a id="open-maps-link" href="#" target="_blank" rel="noopener" class="maps-link">เปิดดูใน Google Maps ↗</a>
+              <button type="button" id="clear-pin-btn" class="btn btn-outline btn-sm" style="margin-top:0.4rem;">ล้างหมุด</button>
+            </div>
+            <input type="hidden" id="delivery-lat" value="" />
+            <input type="hidden" id="delivery-lng" value="" />
+            <small id="location-hint" style="display:block;margin-top:0.45rem;">กดปักหมุดเพื่อใช้ตำแหน่งปัจจุบัน หรือเปิด Google Maps เลือกจุด แล้วกลับมากรอกรายละเอียด</small>
+          </div>
         </div>
         <div class="form-group">
           <label>หมายเหตุ (ถ้ามี)</label>

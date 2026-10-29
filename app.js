@@ -111,6 +111,18 @@ function formatPrice(n) {
   return Number(n).toLocaleString('th-TH');
 }
 
+/** แสดงข้อความที่อยู่ + ลิงก์แผนที่ (ถ้ามีพิกัด) */
+function formatDeliveryLabel(order) {
+  const type = order.deliveryType === 'delivery' ? '🛵 จัดส่ง' : '🏪 รับที่ร้าน';
+  const loc = order.deliveryLocation || '';
+  let maps = '';
+  if (order.deliveryLat && order.deliveryLng) {
+    const url = `https://www.google.com/maps?q=${order.deliveryLat},${order.deliveryLng}`;
+    maps = ` <a href="${url}" target="_blank" rel="noopener" class="maps-link">ดูแผนที่↗</a>`;
+  }
+  return { type, loc, maps };
+}
+
 function formatDate(iso) {
   const d = new Date(iso);
   return d.toLocaleString('th-TH', {
@@ -671,6 +683,136 @@ function closeCart() {
 }
 
 // ===== Checkout =====
+function setDeliveryType(type) {
+  const hidden = document.getElementById('delivery-type');
+  if (hidden) hidden.value = type;
+
+  document.querySelectorAll('.delivery-type-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.type === type);
+  });
+
+  const label = document.getElementById('location-label');
+  const locInput = document.getElementById('customer-location');
+  const mapActions = document.getElementById('delivery-map-actions');
+
+  if (type === 'pickup') {
+    if (label) label.textContent = 'จุดรับที่ร้าน';
+    if (locInput) {
+      locInput.placeholder = 'เช่น โต๊ะ 5, หน้าร้าน, เคาน์เตอร์';
+      locInput.required = false;
+      if (!locInput.value.trim()) locInput.value = 'รับที่ร้าน';
+    }
+    if (mapActions) mapActions.style.display = 'none';
+  } else {
+    if (label) label.textContent = 'ที่อยู่จัดส่ง *';
+    if (locInput) {
+      locInput.placeholder = 'รายละเอียดเพิ่มเติม เช่น บ้านเลขที่, ชั้น, จุดสังเกต';
+      locInput.required = true;
+      if (locInput.value === 'รับที่ร้าน') locInput.value = '';
+    }
+    if (mapActions) mapActions.style.display = 'block';
+  }
+}
+
+function clearPinnedLocation() {
+  const latEl = document.getElementById('delivery-lat');
+  const lngEl = document.getElementById('delivery-lng');
+  const info = document.getElementById('pinned-location-info');
+  const coordsText = document.getElementById('pinned-coords-text');
+  const mapsLink = document.getElementById('open-maps-link');
+  if (latEl) latEl.value = '';
+  if (lngEl) lngEl.value = '';
+  if (info) info.style.display = 'none';
+  if (coordsText) coordsText.textContent = '';
+  if (mapsLink) mapsLink.href = '#';
+}
+
+function applyPinnedLocation(lat, lng, addressText) {
+  const latEl = document.getElementById('delivery-lat');
+  const lngEl = document.getElementById('delivery-lng');
+  const info = document.getElementById('pinned-location-info');
+  const coordsText = document.getElementById('pinned-coords-text');
+  const mapsLink = document.getElementById('open-maps-link');
+  const locInput = document.getElementById('customer-location');
+
+  if (latEl) latEl.value = String(lat);
+  if (lngEl) lngEl.value = String(lng);
+
+  const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+  if (mapsLink) {
+    mapsLink.href = mapsUrl;
+    mapsLink.style.display = 'inline';
+  }
+  if (coordsText) {
+    coordsText.textContent = `📍 ปักหมุดแล้ว (${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)})`;
+  }
+  if (info) info.style.display = 'block';
+
+  if (addressText && locInput && !locInput.value.trim()) {
+    locInput.value = addressText;
+  }
+}
+
+/** ขอตำแหน่งปัจจุบัน → บันทึกหมุด + เปิด Google Maps */
+function pinLocationOnMaps() {
+  const btn = document.getElementById('pin-location-btn');
+  if (!navigator.geolocation) {
+    // ไม่รองรับ GPS — เปิด Google Maps ให้เลือกเอง
+    window.open('https://www.google.com/maps', '_blank', 'noopener');
+    alert('อุปกรณ์นี้ไม่รองรับ GPS\nเปิด Google Maps แล้วคัดลอกลิงก์หรือที่อยู่กลับมากรอกในช่องด้านบน');
+    return;
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'กำลังหาตำแหน่ง...';
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      let addressText = '';
+
+      // ลองแปลงพิกัดเป็นที่อยู่ (OpenStreetMap — ไม่ต้องใช้ API key)
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&accept-language=th`,
+          { headers: { 'Accept': 'application/json' } }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          addressText = data.display_name || '';
+        }
+      } catch (err) {
+        console.warn('reverse geocode:', err);
+      }
+
+      applyPinnedLocation(lat, lng, addressText);
+
+      // เปิด Google Maps ที่จุดปักหมุด (แอปหรือเว็บ)
+      const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+      window.open(mapsUrl, '_blank', 'noopener');
+
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = '📍 ปักหมุดที่อยู่บนแผนที่';
+      }
+    },
+    (err) => {
+      console.warn('geolocation error:', err);
+      // เปิด Google Maps ให้เลือกเอง
+      window.open('https://www.google.com/maps', '_blank', 'noopener');
+      alert('ไม่สามารถอ่านตำแหน่งได้\nจะเปิด Google Maps ให้ — เลือกจุดแล้วคัดลอกที่อยู่กลับมากรอก\n\nหรืออนุญาตการเข้าถึงตำแหน่งแล้วลองใหม่');
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = '📍 ปักหมุดที่อยู่บนแผนที่';
+      }
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+  );
+}
+
 function openCheckout() {
   const cart = getCart();
   if (cart.length === 0) return;
@@ -686,6 +828,12 @@ function openCheckout() {
   const total = cart.reduce((s, i) => s + i.price * i.qty, 0);
   if (totalEl) totalEl.textContent = formatPrice(total);
 
+  // รีเซ็ตวิธีรับสินค้าเป็นรับที่ร้าน
+  setDeliveryType('pickup');
+  clearPinnedLocation();
+  const locInput = document.getElementById('customer-location');
+  if (locInput) locInput.value = 'รับที่ร้าน';
+
   document.getElementById('checkout-modal')?.classList.add('show');
 }
 
@@ -700,14 +848,32 @@ function placeOrder(e) {
 
   const name = document.getElementById('customer-name').value.trim();
   const phone = document.getElementById('customer-phone').value.trim();
-  const location = document.getElementById('customer-location')?.value.trim() || '';
+  const deliveryType = document.getElementById('delivery-type')?.value || 'pickup';
+  let location = document.getElementById('customer-location')?.value.trim() || '';
   const note = document.getElementById('customer-note').value.trim();
+  const lat = document.getElementById('delivery-lat')?.value || '';
+  const lng = document.getElementById('delivery-lng')?.value || '';
+
+  if (deliveryType === 'pickup') {
+    if (!location) location = 'รับที่ร้าน';
+  } else {
+    if (!location && !(lat && lng)) {
+      alert('กรุณาระบุที่อยู่จัดส่ง หรือปักหมุดบนแผนที่');
+      return;
+    }
+    if (!location && lat && lng) {
+      location = `พิกัด ${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`;
+    }
+  }
 
   const order = {
     id: getNextOrderNumber(),
     customerName: name,
     customerPhone: phone,
+    deliveryType: deliveryType, // pickup | delivery
     deliveryLocation: location,
+    deliveryLat: lat ? Number(lat) : null,
+    deliveryLng: lng ? Number(lng) : null,
     note: note,
     items: cart.map(i => ({ ...i })),
     total: cart.reduce((s, i) => s + i.price * i.qty, 0),
@@ -715,18 +881,14 @@ function placeOrder(e) {
     createdAt: new Date().toISOString()
   };
 
-  // บันทึกออเดอร์ (Firebase หรือ local)
   addOrderToFirebase(order).then(() => {
-    // clear cart
     saveCart([]);
     updateCartUI();
-
     closeCheckout();
-
-    // reset form
     document.getElementById('checkout-form')?.reset();
+    clearPinnedLocation();
+    setDeliveryType('pickup');
 
-    // เด้งไปหน้าติดตามออเดอร์ทันที
     openTrack();
     const input = document.getElementById('track-order-id');
     const phoneInput = document.getElementById('track-phone');
@@ -907,7 +1069,8 @@ function renderOrders() {
         <div class="order-meta">
           <span>👤 ${o.customerName}</span>
           <span>📞 ${o.customerPhone}</span>
-          ${o.deliveryLocation ? `<span>📍 ${o.deliveryLocation}</span>` : ''}
+          <span>${o.deliveryType === 'delivery' ? '🛵 จัดส่ง' : '🏪 รับที่ร้าน'}</span>
+          ${o.deliveryLocation ? `<span>📍 ${o.deliveryLocation}${o.deliveryLat && o.deliveryLng ? ` <a href="https://www.google.com/maps?q=${o.deliveryLat},${o.deliveryLng}" target="_blank" rel="noopener" class="maps-link">แผนที่↗</a>` : ''}</span>` : ''}
           <span>🕒 ${formatDate(o.createdAt)}</span>
         </div>
         <div style="margin-top:0.35rem; font-size:0.88rem; color:var(--text-muted);">
@@ -984,7 +1147,8 @@ function viewOrderDetail(orderId) {
     <div class="detail-row"><span>หมายเลข</span><strong>${order.id}</strong></div>
     <div class="detail-row"><span>ลูกค้า</span><strong>${order.customerName}</strong></div>
     <div class="detail-row"><span>เบอร์โทร</span><strong>${order.customerPhone}</strong></div>
-    ${order.deliveryLocation ? `<div class="detail-row"><span>สถานที่จัดส่ง</span><strong>📍 ${order.deliveryLocation}</strong></div>` : ''}
+    <div class="detail-row"><span>วิธีรับ</span><strong>${order.deliveryType === 'delivery' ? '🛵 บริการจัดส่ง' : '🏪 รับที่ร้าน'}</strong></div>
+    ${order.deliveryLocation ? `<div class="detail-row"><span>ที่อยู่</span><strong>📍 ${order.deliveryLocation}${order.deliveryLat && order.deliveryLng ? ` <a href="https://www.google.com/maps?q=${order.deliveryLat},${order.deliveryLng}" target="_blank" rel="noopener" class="maps-link">แผนที่↗</a>` : ''}</strong></div>` : ''}
     <div class="detail-row"><span>เวลาสั่ง</span><strong>${formatDate(order.createdAt)}</strong></div>
     <div class="detail-row"><span>สถานะ</span>
       <span class="status-badge status-${order.status}">${STATUS_LABELS[order.status] || order.status}</span>
@@ -1247,7 +1411,8 @@ function showReceipt(orderId) {
         <div><span>วันที่</span><strong>${formatDate(order.createdAt)}</strong></div>
         <div><span>ลูกค้า</span><strong>${order.customerName}</strong></div>
         <div><span>เบอร์โทร</span><strong>${order.customerPhone}</strong></div>
-        ${order.deliveryLocation ? `<div><span>จัดส่งที่</span><strong>${order.deliveryLocation}</strong></div>` : ''}
+        <div><span>วิธีรับ</span><strong>${order.deliveryType === 'delivery' ? 'จัดส่ง' : 'รับที่ร้าน'}</strong></div>
+        ${order.deliveryLocation ? `<div><span>ที่อยู่</span><strong>${order.deliveryLocation}</strong></div>` : ''}
         <div><span>สถานะ</span><strong>${STATUS_LABELS[order.status] || order.status}</strong></div>
       </div>
       <table class="receipt-table">
@@ -1849,7 +2014,8 @@ function searchOrder() {
       <div class="track-info-list">
         <div class="track-info-row"><span>หมายเลข</span><strong>${order.id}</strong></div>
         <div class="track-info-row"><span>ลูกค้า</span><strong>${order.customerName}</strong></div>
-        ${order.deliveryLocation ? `<div class="track-info-row"><span>สถานที่จัดส่ง</span><strong>📍 ${order.deliveryLocation}</strong></div>` : ''}
+        <div class="track-info-row"><span>วิธีรับ</span><strong>${order.deliveryType === 'delivery' ? '🛵 จัดส่ง' : '🏪 รับที่ร้าน'}</strong></div>
+        ${order.deliveryLocation ? `<div class="track-info-row"><span>ที่อยู่</span><strong>📍 ${order.deliveryLocation}${order.deliveryLat && order.deliveryLng ? ` <a href="https://www.google.com/maps?q=${order.deliveryLat},${order.deliveryLng}" target="_blank" rel="noopener" class="maps-link">แผนที่↗</a>` : ''}</strong></div>` : ''}
         <div class="track-info-row"><span>เวลาสั่ง</span><strong>${formatDate(order.createdAt)}</strong></div>
         ${order.note ? `<div class="track-info-row"><span>หมายเหตุ</span><strong>${order.note}</strong></div>` : ''}
         <div style="margin-top:0.6rem; padding-top:0.5rem; border-top:1px dashed var(--border);">
@@ -1931,6 +2097,13 @@ function initBuyer() {
   document.getElementById('close-checkout')?.addEventListener('click', closeCheckout);
   document.getElementById('checkout-form')?.addEventListener('submit', placeOrder);
   document.getElementById('close-success')?.addEventListener('click', closeSuccess);
+
+  // วิธีรับสินค้า + ปักหมุดแผนที่
+  document.querySelectorAll('.delivery-type-btn').forEach(btn => {
+    btn.addEventListener('click', () => setDeliveryType(btn.dataset.type));
+  });
+  document.getElementById('pin-location-btn')?.addEventListener('click', pinLocationOnMaps);
+  document.getElementById('clear-pin-btn')?.addEventListener('click', clearPinnedLocation);
   document.getElementById('track-from-success')?.addEventListener('click', () => {
     const oid = document.getElementById('order-id-display')?.textContent || '';
     closeSuccess();
