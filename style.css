@@ -1426,3 +1426,29 @@ body {
   color: var(--primary);
   font-weight: 560;
 }
+
+/* ===== Queue badge (track order) ===== */
+.queue-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: #FFF4E5;
+  color: #C47A00;
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding: 0.45rem 1rem;
+  border-radius: 20px;
+  margin-bottom: 0.9rem;
+  border: 1px solid #F5D9A8;
+}
+
+.queue-badge strong {
+  font-size: 1.15rem;
+  color: #A05A00;
+}
+
+.queue-badge.queue-now {
+  background: #E6F6ED;
+  color: #0D7A3F;
+  border-color: #A8E0C0;
+}

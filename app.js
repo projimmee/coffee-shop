@@ -617,10 +617,10 @@ function placeOrder(e) {
     // เด้งไปหน้าติดตามออเดอร์ทันที
     openTrack();
     const input = document.getElementById('track-order-id');
-    if (input) {
-      input.value = order.id;
-      searchOrder();
-    }
+    const phoneInput = document.getElementById('track-phone');
+    if (input) input.value = order.id;
+    if (phoneInput) phoneInput.value = order.customerPhone;
+    searchOrder();
   });
 }
 
@@ -920,10 +920,38 @@ function renderAdminProducts() {
   `).join('');
 }
 
+function showProductForm(isEdit = false) {
+  const wrap = document.getElementById('product-form-wrap');
+  if (wrap) wrap.style.display = 'block';
+  if (!isEdit) {
+    document.getElementById('product-form')?.reset();
+    document.getElementById('edit-id').value = '';
+    document.getElementById('form-title').textContent = '➕ เพิ่มสินค้าใหม่';
+    document.getElementById('submit-product').textContent = 'บันทึกสินค้า';
+  }
+  // เลื่อนไปที่ฟอร์ม
+  wrap?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function hideProductForm() {
+  const wrap = document.getElementById('product-form-wrap');
+  if (wrap) wrap.style.display = 'none';
+  document.getElementById('product-form')?.reset();
+  document.getElementById('edit-id').value = '';
+  document.getElementById('form-title').textContent = '➕ เพิ่มสินค้าใหม่';
+  document.getElementById('submit-product').textContent = 'บันทึกสินค้า';
+}
+
 function editProduct(id) {
   const products = getProducts();
   const p = products.find(x => x.id === id);
   if (!p) return;
+
+  // สลับไปแท็บสินค้า
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.querySelector('[data-tab="products"]')?.classList.add('active');
+  document.getElementById('tab-products')?.classList.add('active');
 
   document.getElementById('edit-id').value = p.id;
   document.getElementById('product-name').value = p.name;
@@ -933,21 +961,12 @@ function editProduct(id) {
   document.getElementById('product-image').value = p.image || '';
   document.getElementById('form-title').textContent = '✏️ แก้ไขสินค้า';
   document.getElementById('submit-product').textContent = 'บันทึกการแก้ไข';
-  document.getElementById('cancel-edit').style.display = 'inline-flex';
 
-  // switch to add tab
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-  document.querySelector('[data-tab="add-product"]')?.classList.add('active');
-  document.getElementById('tab-add-product')?.classList.add('active');
+  showProductForm(true);
 }
 
 function cancelEdit() {
-  document.getElementById('product-form').reset();
-  document.getElementById('edit-id').value = '';
-  document.getElementById('form-title').textContent = '➕ เพิ่มสินค้าใหม่';
-  document.getElementById('submit-product').textContent = 'บันทึกสินค้า';
-  document.getElementById('cancel-edit').style.display = 'none';
+  hideProductForm();
 }
 
 function deleteProduct(id) {
@@ -994,16 +1013,10 @@ function saveProduct(e) {
   }
 
   saveProducts(products);
-  cancelEdit();
+  hideProductForm();
   renderAdminProducts();
   updateCategoryDatalist();
   renderProducts(); // อัปเดตหน้าผู้ซื้อ + ปุ่มหมวดหมู่
-
-  // switch back to products tab
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-  document.querySelector('[data-tab="products"]')?.classList.add('active');
-  document.getElementById('tab-products')?.classList.add('active');
 
   alert(id ? 'แก้ไขสินค้าเรียบร้อย' : 'เพิ่มสินค้าเรียบร้อย');
 }
@@ -1027,7 +1040,9 @@ function startRealtimeSync() {
       // If track modal is open and has a result, refresh it
       const trackResult = document.getElementById('track-result');
       const trackInput = document.getElementById('track-order-id');
-      if (trackResult && trackResult.style.display !== 'none' && trackInput?.value.trim()) {
+      const trackPhone = document.getElementById('track-phone');
+      if (trackResult && trackResult.style.display !== 'none' &&
+          trackInput?.value.trim() && trackPhone?.value.trim()) {
         searchOrder();
       }
     }
@@ -1074,7 +1089,9 @@ function startTrackPolling() {
   trackPollingTimer = setInterval(() => {
     const trackResult = document.getElementById('track-result');
     const trackInput = document.getElementById('track-order-id');
-    if (trackResult && trackResult.style.display !== 'none' && trackInput?.value.trim()) {
+    const trackPhone = document.getElementById('track-phone');
+    if (trackResult && trackResult.style.display !== 'none' &&
+        trackInput?.value.trim() && trackPhone?.value.trim()) {
       searchOrder();
     }
   }, 1500);
@@ -1089,8 +1106,26 @@ function stopTrackPolling() {
 
 
 // ===== Track Order (Buyer) =====
+function normalizePhone(phone) {
+  return String(phone || '').replace(/\D/g, '');
+}
+
+function getQueuePosition(order) {
+  // นับออเดอร์ที่ยังรอทำ/กำลังทำ และสั่งก่อนออเดอร์นี้
+  if (order.status === 'completed' || order.status === 'cancelled') return 0;
+  const orders = getOrders();
+  const active = orders.filter(o => o.status === 'pending' || o.status === 'preparing');
+  // เรียงตามเวลาสั่ง (เก่ากว่ามาก่อน)
+  active.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  const idx = active.findIndex(o => o.id === order.id);
+  if (idx === -1) return 0;
+  return idx; // 0 = กำลังทำอยู่ / คิวแรก, 1 = เหลือ 1 คิวก่อนหน้า ฯลฯ
+}
+
 function openTrack() {
   document.getElementById('track-order-id').value = '';
+  const phoneEl = document.getElementById('track-phone');
+  if (phoneEl) phoneEl.value = '';
   document.getElementById('track-result').style.display = 'none';
   document.getElementById('track-modal')?.classList.add('show');
   startTrackPolling();
@@ -1103,15 +1138,16 @@ function closeTrack() {
 
 function searchOrder() {
   const orderId = document.getElementById('track-order-id')?.value.trim();
+  const phone = document.getElementById('track-phone')?.value.trim() || '';
   const resultEl = document.getElementById('track-result');
   if (!resultEl) return;
 
-  if (!orderId) {
+  if (!orderId || !phone) {
     resultEl.style.display = 'block';
     resultEl.innerHTML = `
       <div class="track-not-found">
         <div class="icon">🔍</div>
-        <p>กรุณากรอกหมายเลขออเดอร์</p>
+        <p>กรุณากรอกหมายเลขออเดอร์และเบอร์โทร</p>
       </div>`;
     return;
   }
@@ -1125,7 +1161,17 @@ function searchOrder() {
     resultEl.innerHTML = `
       <div class="track-not-found">
         <div class="icon">😕</div>
-        <p>ไม่พบออเดอร์นี้<br><small>กรุณาตรวจสอบหมายเลขอีกครั้ง</small></p>
+        <p>ไม่พบออเดอร์นี้<br><small>กรุณาตรวจสอบหมายเลขและเบอร์โทรอีกครั้ง</small></p>
+      </div>`;
+    return;
+  }
+
+  // ตรวจสอบว่าเป็นออเดอร์ของเบอร์นี้จริง
+  if (normalizePhone(order.customerPhone) !== normalizePhone(phone)) {
+    resultEl.innerHTML = `
+      <div class="track-not-found">
+        <div class="icon">🔒</div>
+        <p>ไม่สามารถดูออเดอร์นี้ได้<br><small>เบอร์โทรไม่ตรงกับที่ใช้สั่งซื้อ</small></p>
       </div>`;
     return;
   }
@@ -1159,6 +1205,18 @@ function searchOrder() {
 
   const st = statusMap[order.status] || statusMap.pending;
   const isCancelled = order.status === 'cancelled';
+  const isDone = order.status === 'completed' || isCancelled;
+
+  // คำนวณคิว
+  const queueAhead = getQueuePosition(order);
+  let queueHtml = '';
+  if (!isDone) {
+    if (queueAhead === 0) {
+      queueHtml = `<div class="queue-badge queue-now">🔥 ถึงคิวคุณแล้ว / กำลังทำ</div>`;
+    } else {
+      queueHtml = `<div class="queue-badge">📋 เหลืออีก <strong>${queueAhead}</strong> คิว</div>`;
+    }
+  }
 
   let timelineHtml = '';
   if (!isCancelled) {
@@ -1188,6 +1246,7 @@ function searchOrder() {
   resultEl.innerHTML = `
     <div class="track-status-card">
       <div class="track-live-badge">🔴 สด · อัปเดต ${now}</div>
+      ${queueHtml}
       <div class="track-status-icon">${st.icon}</div>
       <div class="track-status-label" style="color: ${isCancelled ? 'var(--danger)' : 'var(--primary)'}">${st.label}</div>
       <div class="track-status-desc">${st.desc}</div>
@@ -1213,41 +1272,34 @@ function searchOrder() {
 
 // ===== Reset ทั้งหมด (ต้องใส่รหัสผ่าน) =====
 async function resetAllData() {
-  const pw = prompt('กรุณากรอกรหัสผ่านเพื่อรีเซ็ตข้อมูลทั้งหมด:\n(รหัสเดียวกับหน้าผู้ขาย)');
+  const pw = prompt('กรุณากรอกรหัสผ่านเพื่อรีเซ็ตออเดอร์:\n(รหัสเดียวกับหน้าผู้ขาย)');
   if (pw === null) return;
   if (pw !== 'admin123') {
     alert('รหัสผ่านไม่ถูกต้อง');
     return;
   }
-  if (!confirm('ยืนยันรีเซ็ตทั้งหมด?\n\n- สินค้าจะกลับเป็นค่าเริ่มต้น\n- ออเดอร์ทั้งหมดจะถูกลบ\n- ตะกร้าจะว่าง\n- หมายเลขออเดอร์เริ่มที่ 000 ใหม่')) {
+  if (!confirm('ยืนยันรีเซ็ตออเดอร์ทั้งหมด?\n\n- ออเดอร์ทั้งหมดจะถูกลบ\n- หมายเลขออเดอร์เริ่มที่ 000 ใหม่\n\n(สินค้าและหมวดหมู่จะไม่ถูกลบ)')) {
     return;
   }
 
-  localStorage.removeItem(STORAGE_KEYS.products);
+  // ลบเฉพาะออเดอร์ + เคาน์เตอร์ (เก็บสินค้าไว้)
   localStorage.removeItem(STORAGE_KEYS.orders);
-  localStorage.removeItem(STORAGE_KEYS.cart);
   localStorage.removeItem('coffee_order_counter');
-  localStorage.removeItem(STORAGE_KEYS.adminAuth);
+  ordersCache = [];
 
   if (firebaseReady && db) {
     try {
       const batch = db.batch();
       const orderSnap = await db.collection('orders').get();
       orderSnap.docs.forEach(d => batch.delete(d.ref));
-      const prodSnap = await db.collection('products').get();
-      prodSnap.docs.forEach(d => batch.delete(d.ref));
       await batch.commit();
-      await saveProducts(DEFAULT_PRODUCTS);
     } catch (e) {
-      console.error('Firebase reset error:', e);
-      localStorage.setItem(STORAGE_KEYS.products, JSON.stringify(DEFAULT_PRODUCTS));
+      console.error('Firebase reset orders error:', e);
     }
-  } else {
-    localStorage.setItem(STORAGE_KEYS.products, JSON.stringify(DEFAULT_PRODUCTS));
   }
 
-  alert('รีเซ็ตข้อมูลทั้งหมดเรียบร้อยแล้ว');
-  location.reload();
+  alert('รีเซ็ตออเดอร์เรียบร้อยแล้ว');
+  renderOrders();
 }
 
 // ===== Init =====
@@ -1262,7 +1314,9 @@ function initBuyer() {
       // อัปเดตหน้าติดตามถ้าเปิดอยู่
       const trackResult = document.getElementById('track-result');
       const trackInput = document.getElementById('track-order-id');
-      if (trackResult && trackResult.style.display !== 'none' && trackInput?.value.trim()) {
+      const trackPhone = document.getElementById('track-phone');
+      if (trackResult && trackResult.style.display !== 'none' &&
+          trackInput?.value.trim() && trackPhone?.value.trim()) {
         searchOrder();
       }
     });
@@ -1364,6 +1418,7 @@ function initAdmin() {
 
   document.getElementById('product-form')?.addEventListener('submit', saveProduct);
   document.getElementById('cancel-edit')?.addEventListener('click', cancelEdit);
+  document.getElementById('show-add-product-btn')?.addEventListener('click', () => showProductForm(false));
   document.getElementById('close-order-detail')?.addEventListener('click', closeOrderDetail);
 
   document.querySelectorAll('.modal').forEach(modal => {
