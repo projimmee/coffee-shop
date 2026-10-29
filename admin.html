@@ -64,6 +64,7 @@
           <button class="status-filter active" data-status="all">ทั้งหมด</button>
           <button class="status-filter" data-status="pending">รอทำ</button>
           <button class="status-filter" data-status="preparing">กำลังทำ</button>
+          <button class="status-filter" data-status="shipping">กำลังจัดส่ง</button>
           <button class="status-filter" data-status="completed">สำเร็จ</button>
           <button class="status-filter" data-status="cancelled">ยกเลิก</button>
         </div>
@@ -77,13 +78,17 @@
           <div class="stat-num" id="stat-preparing">0</div>
           <div class="stat-label">กำลังทำ</div>
         </div>
+        <div class="stat-card stat-shipping">
+          <div class="stat-num" id="stat-shipping">0</div>
+          <div class="stat-label">กำลังจัดส่ง</div>
+        </div>
         <div class="stat-card stat-completed">
           <div class="stat-num" id="stat-completed">0</div>
           <div class="stat-label">สำเร็จ</div>
         </div>
         <div class="stat-card stat-total">
           <div class="stat-num" id="stat-total">0</div>
-          <div class="stat-label">ทั้งหมดวันนี้</div>
+          <div class="stat-label">ทั้งหมด</div>
         </div>
       </div>
       <div id="orders-list" class="orders-list">
@@ -171,6 +176,23 @@
       </div>
       <div id="order-detail-body">
         <!-- Detail content -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Receipt Modal -->
+  <div id="receipt-modal" class="modal">
+    <div class="modal-content receipt-modal-content">
+      <div class="modal-header no-print">
+        <h2>🧾 ใบเสร็จ</h2>
+        <button class="close-btn" id="close-receipt">&times;</button>
+      </div>
+      <div id="receipt-body" class="receipt-body">
+        <!-- Receipt content -->
+      </div>
+      <div class="receipt-actions no-print">
+        <button type="button" class="btn btn-primary" id="print-receipt-btn">🖨️ พิมพ์ใบเสร็จ</button>
+        <button type="button" class="btn btn-outline" id="close-receipt-btn">ปิด</button>
       </div>
     </div>
   </div>

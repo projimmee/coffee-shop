@@ -704,15 +704,25 @@ let previousOrderIds = new Set();
 function updateOrderStats(allOrders) {
   const pending = allOrders.filter(o => o.status === 'pending').length;
   const preparing = allOrders.filter(o => o.status === 'preparing').length;
+  const shipping = allOrders.filter(o => o.status === 'shipping').length;
   const completed = allOrders.filter(o => o.status === 'completed').length;
   const total = allOrders.length;
 
   const el = (id) => document.getElementById(id);
   if (el('stat-pending')) el('stat-pending').textContent = pending;
   if (el('stat-preparing')) el('stat-preparing').textContent = preparing;
+  if (el('stat-shipping')) el('stat-shipping').textContent = shipping;
   if (el('stat-completed')) el('stat-completed').textContent = completed;
   if (el('stat-total')) el('stat-total').textContent = total;
 }
+
+const STATUS_LABELS = {
+  pending: 'รอทำ',
+  preparing: 'กำลังทำ',
+  shipping: 'กำลังจัดส่ง',
+  completed: 'สำเร็จ',
+  cancelled: 'ยกเลิก'
+};
 
 function updateLastSync() {
   const el = document.getElementById('last-sync');
@@ -752,18 +762,24 @@ function renderOrders() {
     return;
   }
 
-  const statusLabel = {
-    pending: 'รอทำ',
-    preparing: 'กำลังทำ',
-    completed: 'สำเร็จ',
-    cancelled: 'ยกเลิก'
-  };
-
   list.innerHTML = orders.map(o => {
     const isNew = newIds.includes(o.id);
-    const borderClass = o.status === 'pending' ? 'pending-urgent' : (o.status === 'preparing' ? 'preparing-active' : '');
+    const borderClass = o.status === 'pending' ? 'pending-urgent'
+      : (o.status === 'preparing' ? 'preparing-active'
+      : (o.status === 'shipping' ? 'shipping-active' : ''));
     const newClass = isNew ? 'new-order' : '';
     const itemSummary = o.items.map(i => `${i.name}×${i.qty}${i.note ? ' (📝'+i.note+')' : ''}`).join(', ');
+
+    let actionBtns = '';
+    if (o.status === 'pending') {
+      actionBtns = `<button class="btn btn-primary btn-sm" onclick="updateOrderStatus('${o.id}', 'preparing')">เริ่มทำ</button>`;
+    } else if (o.status === 'preparing') {
+      actionBtns = `<button class="btn btn-primary btn-sm" onclick="updateOrderStatus('${o.id}', 'shipping')">จัดส่ง</button>`;
+    } else if (o.status === 'shipping') {
+      actionBtns = `<button class="btn btn-primary btn-sm" onclick="completeOrderWithReceipt('${o.id}')">เสร็จแล้ว</button>`;
+    } else if (o.status === 'completed') {
+      actionBtns = `<button class="btn btn-outline btn-sm" onclick="showReceipt('${o.id}')">🧾 ใบเสร็จ</button>`;
+    }
 
     return `
     <div class="order-card ${borderClass} ${newClass}" data-order-id="${o.id}">
@@ -779,13 +795,12 @@ function renderOrders() {
           ${itemSummary}
         </div>
         <div style="margin-top:0.45rem;">
-          <span class="status-badge status-${o.status}">${statusLabel[o.status] || o.status}</span>
+          <span class="status-badge status-${o.status}">${STATUS_LABELS[o.status] || o.status}</span>
           <strong style="margin-left:0.8rem; color:var(--primary);">${formatPrice(o.total)} ฿</strong>
         </div>
       </div>
       <div class="order-actions">
-        ${o.status === 'pending' ? `<button class="btn btn-primary btn-sm" onclick="updateOrderStatus('${o.id}', 'preparing')">เริ่มทำ</button>` : ''}
-        ${o.status === 'preparing' ? `<button class="btn btn-primary btn-sm" onclick="updateOrderStatus('${o.id}', 'completed')">เสร็จแล้ว</button>` : ''}
+        ${actionBtns}
         <button class="btn btn-outline btn-sm" onclick="viewOrderDetail('${o.id}')">รายละเอียด</button>
       </div>
     </div>`;
@@ -827,12 +842,22 @@ function viewOrderDetail(orderId) {
   const order = orders.find(o => o.id === orderId);
   if (!order) return;
 
-  const statusLabel = {
-    pending: 'รอทำ',
-    preparing: 'กำลังทำ',
-    completed: 'สำเร็จ',
-    cancelled: 'ยกเลิก'
-  };
+  let actionBtns = '';
+  if (order.status === 'pending') {
+    actionBtns += `<button class="btn btn-primary btn-sm" onclick="updateOrderStatus('${order.id}', 'preparing')">เริ่มทำ</button>`;
+  }
+  if (order.status === 'preparing') {
+    actionBtns += `<button class="btn btn-primary btn-sm" onclick="updateOrderStatus('${order.id}', 'shipping')">จัดส่ง</button>`;
+  }
+  if (order.status === 'shipping') {
+    actionBtns += `<button class="btn btn-primary btn-sm" onclick="completeOrderWithReceipt('${order.id}')">เสร็จแล้ว</button>`;
+  }
+  if (order.status === 'completed') {
+    actionBtns += `<button class="btn btn-outline btn-sm" onclick="showReceipt('${order.id}')">🧾 ใบเสร็จ</button>`;
+  }
+  if (order.status !== 'completed' && order.status !== 'cancelled') {
+    actionBtns += `<button class="btn btn-outline btn-sm" onclick="updateOrderStatus('${order.id}', 'cancelled')" style="color:var(--danger);border-color:var(--danger);">ยกเลิก</button>`;
+  }
 
   const body = document.getElementById('order-detail-body');
   body.innerHTML = `
@@ -842,7 +867,7 @@ function viewOrderDetail(orderId) {
     ${order.deliveryLocation ? `<div class="detail-row"><span>สถานที่จัดส่ง</span><strong>📍 ${order.deliveryLocation}</strong></div>` : ''}
     <div class="detail-row"><span>เวลาสั่ง</span><strong>${formatDate(order.createdAt)}</strong></div>
     <div class="detail-row"><span>สถานะ</span>
-      <span class="status-badge status-${order.status}">${statusLabel[order.status]}</span>
+      <span class="status-badge status-${order.status}">${STATUS_LABELS[order.status] || order.status}</span>
     </div>
     ${order.note ? `<div class="detail-row"><span>หมายเหตุ</span><strong>${order.note}</strong></div>` : ''}
     
@@ -861,12 +886,7 @@ function viewOrderDetail(orderId) {
     </div>
 
     <div class="status-actions">
-      ${order.status !== 'preparing' && order.status !== 'completed' && order.status !== 'cancelled'
-        ? `<button class="btn btn-primary btn-sm" onclick="updateOrderStatus('${order.id}', 'preparing')">เริ่มทำ</button>` : ''}
-      ${order.status === 'preparing'
-        ? `<button class="btn btn-primary btn-sm" onclick="updateOrderStatus('${order.id}', 'completed')">เสร็จแล้ว</button>` : ''}
-      ${order.status !== 'completed' && order.status !== 'cancelled'
-        ? `<button class="btn btn-outline btn-sm" onclick="updateOrderStatus('${order.id}', 'cancelled')" style="color:var(--danger);border-color:var(--danger);">ยกเลิก</button>` : ''}
+      ${actionBtns}
     </div>
   `;
 
@@ -884,8 +904,125 @@ function updateOrderStatus(orderId, newStatus) {
     const order = orders.find(o => o.id === orderId);
     if (order) order.status = newStatus;
     renderOrders();
-    viewOrderDetail(orderId);
+    // ถ้า modal รายละเอียดเปิดอยู่ ให้อัปเดต
+    if (document.getElementById('order-detail-modal')?.classList.contains('show')) {
+      viewOrderDetail(orderId);
+    }
   });
+}
+
+function completeOrderWithReceipt(orderId) {
+  updateOrderInFirebase(orderId, { status: 'completed' }).then(() => {
+    const orders = getOrders();
+    const order = orders.find(o => o.id === orderId);
+    if (order) order.status = 'completed';
+    renderOrders();
+    closeOrderDetail();
+    showReceipt(orderId);
+  });
+}
+
+function showReceipt(orderId) {
+  const orders = getOrders();
+  const order = orders.find(o => o.id === orderId);
+  if (!order) return;
+
+  const body = document.getElementById('receipt-body');
+  if (!body) return;
+
+  const itemsHtml = order.items.map(i => `
+    <tr>
+      <td>${i.name}${i.note ? `<br><small>📝 ${i.note}</small>` : ''}</td>
+      <td style="text-align:center;">${i.qty}</td>
+      <td style="text-align:right;">${formatPrice(i.price)} ฿</td>
+      <td style="text-align:right;">${formatPrice(i.price * i.qty)} ฿</td>
+    </tr>
+  `).join('');
+
+  body.innerHTML = `
+    <div class="receipt-paper" id="receipt-print-area">
+      <div class="receipt-header">
+        <div class="receipt-logo">☕</div>
+        <h2>Coffee Shop</h2>
+        <p>ใบเสร็จรับเงิน</p>
+      </div>
+      <div class="receipt-meta">
+        <div><span>เลขที่</span><strong>${order.id}</strong></div>
+        <div><span>วันที่</span><strong>${formatDate(order.createdAt)}</strong></div>
+        <div><span>ลูกค้า</span><strong>${order.customerName}</strong></div>
+        <div><span>เบอร์โทร</span><strong>${order.customerPhone}</strong></div>
+        ${order.deliveryLocation ? `<div><span>จัดส่งที่</span><strong>${order.deliveryLocation}</strong></div>` : ''}
+      </div>
+      <table class="receipt-table">
+        <thead>
+          <tr>
+            <th>รายการ</th>
+            <th style="text-align:center;">จำนวน</th>
+            <th style="text-align:right;">ราคา</th>
+            <th style="text-align:right;">รวม</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${itemsHtml}
+        </tbody>
+      </table>
+      ${order.note ? `<div class="receipt-note">หมายเหตุ: ${order.note}</div>` : ''}
+      <div class="receipt-total">
+        <span>ยอดรวมทั้งสิ้น</span>
+        <strong>${formatPrice(order.total)} บาท</strong>
+      </div>
+      <div class="receipt-footer">
+        <p>ขอบคุณที่อุดหนุน ☕</p>
+        <p class="receipt-date-print">พิมพ์เมื่อ ${new Date().toLocaleString('th-TH')}</p>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('receipt-modal')?.classList.add('show');
+}
+
+function closeReceipt() {
+  document.getElementById('receipt-modal')?.classList.remove('show');
+}
+
+function printReceipt() {
+  const area = document.getElementById('receipt-print-area');
+  if (!area) return;
+  const printWin = window.open('', '_blank', 'width=400,height=600');
+  if (!printWin) {
+    // fallback: print current page with CSS
+    window.print();
+    return;
+  }
+  printWin.document.write(`
+    <!DOCTYPE html>
+    <html><head>
+      <meta charset="UTF-8">
+      <title>ใบเสร็จ</title>
+      <style>
+        body { font-family: 'Sarabun', sans-serif; padding: 16px; color: #2C1810; }
+        .receipt-header { text-align: center; margin-bottom: 16px; border-bottom: 2px dashed #ccc; padding-bottom: 12px; }
+        .receipt-logo { font-size: 2rem; }
+        .receipt-header h2 { margin: 4px 0; font-size: 1.3rem; }
+        .receipt-header p { margin: 0; color: #666; font-size: 0.9rem; }
+        .receipt-meta { margin-bottom: 12px; font-size: 0.9rem; }
+        .receipt-meta div { display: flex; justify-content: space-between; padding: 3px 0; }
+        .receipt-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin: 12px 0; }
+        .receipt-table th, .receipt-table td { padding: 6px 4px; border-bottom: 1px solid #eee; }
+        .receipt-table th { text-align: left; border-bottom: 2px solid #ccc; }
+        .receipt-note { font-size: 0.85rem; color: #666; margin: 8px 0; }
+        .receipt-total { display: flex; justify-content: space-between; font-size: 1.1rem; font-weight: 700;
+          border-top: 2px dashed #ccc; padding-top: 10px; margin-top: 8px; }
+        .receipt-footer { text-align: center; margin-top: 20px; color: #666; font-size: 0.85rem; }
+        .receipt-date-print { font-size: 0.75rem; margin-top: 4px; }
+        small { color: #888; }
+      </style>
+    </head><body>
+      ${area.innerHTML}
+      <script>window.onload = function(){ window.print(); }<\/script>
+    </body></html>
+  `);
+  printWin.document.close();
 }
 
 // ===== Products (Admin) =====
@@ -1228,15 +1365,17 @@ function normalizePhone(phone) {
 }
 
 function getQueuePosition(order) {
-  // นับออเดอร์ที่ยังรอทำ/กำลังทำ และสั่งก่อนออเดอร์นี้
+  // นับออเดอร์ที่ยังรอทำ/กำลังทำ/กำลังจัดส่ง และสั่งก่อนออเดอร์นี้
   if (order.status === 'completed' || order.status === 'cancelled') return 0;
   const orders = getOrders();
-  const active = orders.filter(o => o.status === 'pending' || o.status === 'preparing');
+  const active = orders.filter(o =>
+    o.status === 'pending' || o.status === 'preparing' || o.status === 'shipping'
+  );
   // เรียงตามเวลาสั่ง (เก่ากว่ามาก่อน)
   active.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
   const idx = active.findIndex(o => o.id === order.id);
   if (idx === -1) return 0;
-  return idx; // 0 = กำลังทำอยู่ / คิวแรก, 1 = เหลือ 1 คิวก่อนหน้า ฯลฯ
+  return idx; // 0 = ถึงคิวแล้ว, 1 = เหลือ 1 คิวก่อนหน้า ฯลฯ
 }
 
 function openTrack() {
@@ -1306,11 +1445,17 @@ function searchOrder() {
       desc: 'กำลังชงเครื่องดื่ม / เตรียมสินค้าให้คุณ',
       step: 2
     },
+    shipping: {
+      icon: '🛵',
+      label: 'กำลังจัดส่ง',
+      desc: 'กำลังจัดส่งไปยังจุดที่ระบุ',
+      step: 3
+    },
     completed: {
       icon: '✅',
       label: 'เสร็จแล้ว',
-      desc: 'ออเดอร์พร้อมแล้ว สามารถมารับได้เลย!',
-      step: 3
+      desc: 'จัดส่งเรียบร้อย ขอบคุณที่อุดหนุน!',
+      step: 4
     },
     cancelled: {
       icon: '❌',
@@ -1328,7 +1473,9 @@ function searchOrder() {
   const queueAhead = getQueuePosition(order);
   let queueHtml = '';
   if (!isDone) {
-    if (queueAhead === 0) {
+    if (order.status === 'shipping') {
+      queueHtml = `<div class="queue-badge queue-now">🛵 กำลังจัดส่งถึงคุณ</div>`;
+    } else if (queueAhead === 0) {
       queueHtml = `<div class="queue-badge queue-now">🔥 ถึงคิวคุณแล้ว / กำลังทำ</div>`;
     } else {
       queueHtml = `<div class="queue-badge">📋 เหลืออีก <strong>${queueAhead}</strong> คิว</div>`;
@@ -1338,7 +1485,7 @@ function searchOrder() {
   let timelineHtml = '';
   if (!isCancelled) {
     timelineHtml = `
-      <div class="track-timeline">
+      <div class="track-timeline track-timeline-4">
         <div class="track-step ${st.step >= 1 ? (st.step > 1 ? 'done' : 'active') : ''}">
           <div class="track-step-dot">${st.step > 1 ? '✓' : '1'}</div>
           <div class="track-step-label">รอทำ</div>
@@ -1347,8 +1494,12 @@ function searchOrder() {
           <div class="track-step-dot">${st.step > 2 ? '✓' : '2'}</div>
           <div class="track-step-label">กำลังทำ</div>
         </div>
-        <div class="track-step ${st.step >= 3 ? 'active' : ''}">
-          <div class="track-step-dot">${st.step >= 3 ? '✓' : '3'}</div>
+        <div class="track-step ${st.step >= 3 ? (st.step > 3 ? 'done' : 'active') : ''}">
+          <div class="track-step-dot">${st.step > 3 ? '✓' : '3'}</div>
+          <div class="track-step-label">จัดส่ง</div>
+        </div>
+        <div class="track-step ${st.step >= 4 ? 'active' : ''}">
+          <div class="track-step-dot">${st.step >= 4 ? '✓' : '4'}</div>
           <div class="track-step-label">เสร็จแล้ว</div>
         </div>
       </div>`;
@@ -1541,6 +1692,9 @@ function initAdmin() {
   document.getElementById('product-image-url')?.addEventListener('change', handleImageUrlInput);
   document.getElementById('product-image-url')?.addEventListener('blur', handleImageUrlInput);
   document.getElementById('close-order-detail')?.addEventListener('click', closeOrderDetail);
+  document.getElementById('close-receipt')?.addEventListener('click', closeReceipt);
+  document.getElementById('close-receipt-btn')?.addEventListener('click', closeReceipt);
+  document.getElementById('print-receipt-btn')?.addEventListener('click', printReceipt);
 
   document.querySelectorAll('.modal').forEach(modal => {
     modal.addEventListener('click', (e) => {
