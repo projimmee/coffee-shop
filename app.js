@@ -1062,6 +1062,36 @@ function renderOrders() {
       actionBtns = `<button class="btn btn-outline btn-sm" onclick="showReceipt('${o.id}')">🧾 ใบเสร็จ</button>`;
     }
 
+    const hasGps = o.deliveryLat != null && o.deliveryLng != null && o.deliveryLat !== '' && o.deliveryLng !== '';
+    const mapsUrl = hasGps
+      ? `https://www.google.com/maps?q=${o.deliveryLat},${o.deliveryLng}`
+      : '';
+    const navUrl = hasGps
+      ? `https://www.google.com/maps/dir/?api=1&destination=${o.deliveryLat},${o.deliveryLng}`
+      : '';
+
+    let gpsBlock = '';
+    if (o.deliveryType === 'delivery') {
+      if (hasGps) {
+        gpsBlock = `
+          <div class="order-gps-box">
+            <div class="order-gps-title">📍 พิกัด GPS</div>
+            <div class="order-gps-coords">${Number(o.deliveryLat).toFixed(6)}, ${Number(o.deliveryLng).toFixed(6)}</div>
+            ${o.deliveryLocation ? `<div class="order-gps-addr">${o.deliveryLocation}</div>` : ''}
+            <div class="order-gps-actions">
+              <a class="btn btn-primary btn-sm" href="${navUrl}" target="_blank" rel="noopener">🧭 นำทาง</a>
+              <a class="btn btn-outline btn-sm" href="${mapsUrl}" target="_blank" rel="noopener">แผนที่</a>
+            </div>
+          </div>`;
+      } else if (o.deliveryLocation) {
+        gpsBlock = `
+          <div class="order-gps-box order-gps-no-pin">
+            <div class="order-gps-title">📍 ที่อยู่จัดส่ง (ไม่มีพิกัด)</div>
+            <div class="order-gps-addr">${o.deliveryLocation}</div>
+          </div>`;
+      }
+    }
+
     return `
     <div class="order-card ${borderClass} ${newClass}" data-order-id="${o.id}">
       <div class="order-info">
@@ -1069,10 +1099,11 @@ function renderOrders() {
         <div class="order-meta">
           <span>👤 ${o.customerName}</span>
           <span>📞 ${o.customerPhone}</span>
-          <span>${o.deliveryType === 'delivery' ? '🛵 จัดส่ง' : '🏪 รับที่ร้าน'}</span>
-          ${o.deliveryLocation ? `<span>📍 ${o.deliveryLocation}${o.deliveryLat && o.deliveryLng ? ` <a href="https://www.google.com/maps?q=${o.deliveryLat},${o.deliveryLng}" target="_blank" rel="noopener" class="maps-link">แผนที่↗</a>` : ''}</span>` : ''}
+          <span class="delivery-type-tag ${o.deliveryType === 'delivery' ? 'is-delivery' : 'is-pickup'}">${o.deliveryType === 'delivery' ? '🛵 จัดส่ง' : '🏪 รับที่ร้าน'}</span>
           <span>🕒 ${formatDate(o.createdAt)}</span>
         </div>
+        ${gpsBlock}
+        ${o.deliveryType !== 'delivery' && o.deliveryLocation ? `<div class="order-pickup-loc">📍 ${o.deliveryLocation}</div>` : ''}
         <div style="margin-top:0.35rem; font-size:0.88rem; color:var(--text-muted);">
           ${itemSummary}
         </div>
@@ -1083,6 +1114,7 @@ function renderOrders() {
       </div>
       <div class="order-actions">
         ${actionBtns}
+        ${hasGps ? `<a class="btn btn-primary btn-sm" href="${navUrl}" target="_blank" rel="noopener">🧭 นำทาง</a>` : ''}
         <button class="btn btn-outline btn-sm" onclick="viewOrderDetail('${o.id}')">รายละเอียด</button>
       </div>
     </div>`;
@@ -1142,19 +1174,61 @@ function viewOrderDetail(orderId) {
     actionBtns += `<button class="btn btn-outline btn-sm" onclick="updateOrderStatus('${order.id}', 'cancelled')" style="color:var(--danger);border-color:var(--danger);">ยกเลิก</button>`;
   }
 
+  const hasGps = order.deliveryLat != null && order.deliveryLng != null && order.deliveryLat !== '' && order.deliveryLng !== '';
+  const mapsUrl = hasGps ? `https://www.google.com/maps?q=${order.deliveryLat},${order.deliveryLng}` : '';
+  const navUrl = hasGps ? `https://www.google.com/maps/dir/?api=1&destination=${order.deliveryLat},${order.deliveryLng}` : '';
+  // แผนที่ฝัง (ไม่ต้องใช้ API key)
+  const mapEmbed = hasGps
+    ? `<div class="order-map-embed">
+         <iframe
+           title="แผนที่จัดส่ง"
+           width="100%"
+           height="200"
+           style="border:0;border-radius:12px;"
+           loading="lazy"
+           referrerpolicy="no-referrer-when-downgrade"
+           src="https://maps.google.com/maps?q=${order.deliveryLat},${order.deliveryLng}&z=16&output=embed">
+         </iframe>
+       </div>`
+    : '';
+
+  let gpsDetailHtml = '';
+  if (order.deliveryType === 'delivery') {
+    gpsDetailHtml = `
+      <div class="order-gps-box detail-gps-box">
+        <div class="order-gps-title">📍 ที่อยู่จัดส่ง / พิกัด GPS</div>
+        ${order.deliveryLocation ? `<div class="order-gps-addr">${order.deliveryLocation}</div>` : '<div class="order-gps-addr">ไม่ได้ระบุข้อความที่อยู่</div>'}
+        ${hasGps ? `
+          <div class="order-gps-coords">Lat: ${Number(order.deliveryLat).toFixed(6)} · Lng: ${Number(order.deliveryLng).toFixed(6)}</div>
+          <div class="order-gps-actions">
+            <a class="btn btn-primary btn-sm" href="${navUrl}" target="_blank" rel="noopener">🧭 นำทาง Google Maps</a>
+            <a class="btn btn-outline btn-sm" href="${mapsUrl}" target="_blank" rel="noopener">เปิดแผนที่</a>
+          </div>
+          ${mapEmbed}
+        ` : `<div class="order-gps-coords" style="color:var(--warning);">ยังไม่มีพิกัด GPS จากลูกค้า</div>`}
+      </div>`;
+  } else if (order.deliveryLocation) {
+    gpsDetailHtml = `
+      <div class="order-gps-box order-gps-no-pin detail-gps-box">
+        <div class="order-gps-title">🏪 จุดรับที่ร้าน</div>
+        <div class="order-gps-addr">${order.deliveryLocation}</div>
+      </div>`;
+  }
+
   const body = document.getElementById('order-detail-body');
   body.innerHTML = `
     <div class="detail-row"><span>หมายเลข</span><strong>${order.id}</strong></div>
     <div class="detail-row"><span>ลูกค้า</span><strong>${order.customerName}</strong></div>
-    <div class="detail-row"><span>เบอร์โทร</span><strong>${order.customerPhone}</strong></div>
+    <div class="detail-row"><span>เบอร์โทร</span><strong><a href="tel:${order.customerPhone}">${order.customerPhone}</a></strong></div>
     <div class="detail-row"><span>วิธีรับ</span><strong>${order.deliveryType === 'delivery' ? '🛵 บริการจัดส่ง' : '🏪 รับที่ร้าน'}</strong></div>
-    ${order.deliveryLocation ? `<div class="detail-row"><span>ที่อยู่</span><strong>📍 ${order.deliveryLocation}${order.deliveryLat && order.deliveryLng ? ` <a href="https://www.google.com/maps?q=${order.deliveryLat},${order.deliveryLng}" target="_blank" rel="noopener" class="maps-link">แผนที่↗</a>` : ''}</strong></div>` : ''}
     <div class="detail-row"><span>เวลาสั่ง</span><strong>${formatDate(order.createdAt)}</strong></div>
     <div class="detail-row"><span>สถานะ</span>
       <span class="status-badge status-${order.status}">${STATUS_LABELS[order.status] || order.status}</span>
     </div>
     ${order.note ? `<div class="detail-row"><span>หมายเหตุ</span><strong>${order.note}</strong></div>` : ''}
-    
+
+    ${gpsDetailHtml}
+
     <div class="detail-items">
       <strong>รายการสินค้า</strong>
       ${order.items.map(i => `
@@ -1171,6 +1245,7 @@ function viewOrderDetail(orderId) {
 
     <div class="status-actions">
       ${actionBtns}
+      ${hasGps ? `<a class="btn btn-primary btn-sm" href="${navUrl}" target="_blank" rel="noopener">🧭 นำทาง</a>` : ''}
     </div>
   `;
 
