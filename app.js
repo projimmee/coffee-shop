@@ -177,6 +177,7 @@ function renderCategoryFilters() {
 
 // ===== Storage (localStorage + Firebase) =====
 let db = null;
+let storageRef = null;
 let firebaseReady = false;
 let productsCache = null;
 let ordersCache = [];
@@ -191,6 +192,12 @@ function initFirebase() {
       firebase.initializeApp(firebaseConfig);
     }
     db = firebase.firestore();
+    if (typeof firebase.storage === 'function') {
+      storageRef = firebase.storage().ref();
+    } else {
+      storageRef = null;
+      console.warn('[Storage] Firebase Storage SDK ยังไม่โหลด — รูปจะเก็บแบบ local');
+    }
     firebaseReady = true;
     console.log('[Storage] เชื่อม Firebase สำเร็จ');
     return true;
@@ -199,6 +206,57 @@ function initFirebase() {
     firebaseReady = false;
     return false;
   }
+}
+
+/** แปลง data URL เป็น Blob */
+function dataUrlToBlob(dataUrl) {
+  const parts = dataUrl.split(',');
+  const mime = (parts[0].match(/:(.*?);/) || [])[1] || 'image/jpeg';
+  const binary = atob(parts[1] || '');
+  const arr = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
+
+/**
+ * อัปโหลดรูปขึ้น Firebase Storage
+ * @param {string} path เช่น products/p1.jpg หรือ settings/promptpay.jpg
+ * @param {string} dataUrl data:image/...
+ * @returns {Promise<string>} download URL หรือ dataUrl เดิมถ้าอัปโหลดไม่ได้
+ */
+async function uploadImageToFirebase(path, dataUrl) {
+  if (!dataUrl || !dataUrl.startsWith('data:')) return dataUrl || '';
+  if (!firebaseReady || !storageRef) {
+    console.log('[Upload] ไม่มี Firebase Storage — เก็บแบบ local');
+    return dataUrl;
+  }
+  try {
+    const blob = dataUrlToBlob(dataUrl);
+    const ref = storageRef.child(path);
+    const snapshot = await ref.put(blob, {
+      contentType: blob.type || 'image/jpeg',
+      cacheControl: 'public,max-age=31536000'
+    });
+    const url = await snapshot.ref.getDownloadURL();
+    console.log('[Upload] สำเร็จ:', path);
+    return url;
+  } catch (e) {
+    console.error('[Upload] ล้มเหลว:', path, e);
+    alert('อัปโหลดรูปขึ้น Firebase ไม่สำเร็จ\nจะเก็บในเครื่องชั่วคราว\n\n' + (e.message || e));
+    return dataUrl;
+  }
+}
+
+/** ถ้าเป็น data URL ให้ upload แล้วคืน URL, ถ้าเป็น http อยู่แล้วคืนเดิม */
+async function ensureRemoteImageUrl(dataUrlOrUrl, storagePath) {
+  if (!dataUrlOrUrl) return '';
+  if (dataUrlOrUrl.startsWith('http://') || dataUrlOrUrl.startsWith('https://')) {
+    return dataUrlOrUrl;
+  }
+  if (dataUrlOrUrl.startsWith('data:')) {
+    return await uploadImageToFirebase(storagePath, dataUrlOrUrl);
+  }
+  return dataUrlOrUrl;
 }
 
 // --- Products ---
@@ -682,7 +740,7 @@ function showAdminDashboard() {
     startRealtimeSync();
     startOrdersPolling();
   }
-  updatePromptPayPreview();
+  loadPromptPayFromFirebase();
 }
 
 function setupTabs() {
@@ -951,28 +1009,69 @@ function getPromptPayImage() {
   }
 }
 
-function savePromptPayImage(dataUrl) {
+async function loadPromptPayFromFirebase() {
+  if (!firebaseReady || !db) {
+    updatePromptPayPreview();
+    return getPromptPayImage();
+  }
   try {
-    if (dataUrl) {
-      localStorage.setItem(STORAGE_KEYS.promptpay, dataUrl);
+    const doc = await db.collection('settings').doc('promptpay').get();
+    if (doc.exists && doc.data().imageUrl) {
+      const url = doc.data().imageUrl;
+      try {
+        localStorage.setItem(STORAGE_KEYS.promptpay, url);
+      } catch (e) { /* URL สั้น ปกติไม่เต็ม */ }
+      updatePromptPayPreview();
+      return url;
+    }
+  } catch (e) {
+    console.error('loadPromptPayFromFirebase:', e);
+  }
+  updatePromptPayPreview();
+  return getPromptPayImage();
+}
+
+async function savePromptPayImage(dataUrl) {
+  let finalUrl = dataUrl || '';
+
+  // อัปโหลดขึ้น Firebase Storage ถ้าเป็น data URL
+  if (finalUrl && finalUrl.startsWith('data:') && firebaseReady) {
+    finalUrl = await uploadImageToFirebase(
+      'settings/promptpay_' + Date.now() + '.jpg',
+      finalUrl
+    );
+  }
+
+  // บันทึก URL ลง Firestore
+  if (firebaseReady && db) {
+    try {
+      if (finalUrl) {
+        await db.collection('settings').doc('promptpay').set({
+          imageUrl: finalUrl,
+          updatedAt: new Date().toISOString()
+        });
+      } else {
+        await db.collection('settings').doc('promptpay').delete().catch(() => {});
+      }
+    } catch (e) {
+      console.error('save promptpay firestore:', e);
+    }
+  }
+
+  // เก็บใน localStorage (URL สั้น หรือ data URL fallback)
+  try {
+    if (finalUrl) {
+      localStorage.setItem(STORAGE_KEYS.promptpay, finalUrl);
     } else {
       localStorage.removeItem(STORAGE_KEYS.promptpay);
     }
   } catch (e) {
-    console.error('savePromptPayImage:', e);
-    // ถ้าเต็ม localStorage ลองย่ออีกครั้ง
-    if (dataUrl && dataUrl.length > 100000) {
-      try {
-        // เก็บแบบย่อพิเศษผ่าน canvas อีกครั้งทำใน caller
-        alert('พื้นที่จัดเก็บเต็ม กรุณาใช้รูปที่เล็กกว่านี้ (แนะนำต่ำกว่า 500KB)');
-        return false;
-      } catch (e2) {
-        alert('บันทึกรูปไม่สำเร็จ: ' + (e.message || e));
-        return false;
-      }
+    console.error('savePromptPayImage localStorage:', e);
+    // ถ้าเป็น URL จาก Firebase จะสั้น ไม่น่าเต็ม — ถ้า data URL เต็ม แจ้งเตือน
+    if (finalUrl && finalUrl.startsWith('data:')) {
+      alert('พื้นที่จัดเก็บในเครื่องเต็ม กรุณาเปิด Firebase เพื่อเก็บรูปออนไลน์');
+      return false;
     }
-    alert('บันทึกรูปไม่สำเร็จ: ' + (e.message || e));
-    return false;
   }
   updatePromptPayPreview();
   return true;
@@ -1016,25 +1115,26 @@ function handlePromptPayUpload(e) {
   const reader = new FileReader();
   reader.onload = () => {
     // ย่อรูป QR ให้ชัดแต่ไม่ใหญ่เกิน (max 400px, quality 0.7)
-    compressImageIfNeeded(reader.result, 400, 0.7).then(src => {
-      // ถ้ายังใหญ่ ย่ออีก
-      const finalize = (finalSrc) => {
-        const ok = savePromptPayImage(finalSrc);
-        if (ok !== false) {
-          // สลับไปแท็บตั้งค่าเพื่อให้เห็นพรีวิว
-          document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-          document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-          document.querySelector('[data-tab="settings"]')?.classList.add('active');
-          document.getElementById('tab-settings')?.classList.add('active');
-          updatePromptPayPreview();
-          alert('บันทึกรูปพร้อมเพย์เรียบร้อย');
-        }
-      };
-
+    compressImageIfNeeded(reader.result, 400, 0.7).then(async src => {
+      let finalSrc = src;
       if (src.length > 400000) {
-        compressImageIfNeeded(src, 300, 0.6).then(finalize);
-      } else {
-        finalize(src);
+        finalSrc = await compressImageIfNeeded(src, 300, 0.6);
+      }
+      // แสดงสถานะกำลังอัปโหลด
+      const preview = document.getElementById('promptpay-preview');
+      if (preview) preview.innerHTML = '<span class="preview-placeholder">กำลังอัปโหลด...</span>';
+
+      const ok = await savePromptPayImage(finalSrc);
+      if (ok !== false) {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.querySelector('[data-tab="settings"]')?.classList.add('active');
+        document.getElementById('tab-settings')?.classList.add('active');
+        updatePromptPayPreview();
+        const msg = firebaseReady
+          ? 'บันทึกรูปพร้อมเพย์เรียบร้อย (อัปขึ้น Firebase แล้ว)'
+          : 'บันทึกรูปพร้อมเพย์ในเครื่องแล้ว\n(เปิด Firebase เพื่อใช้ข้ามเครื่อง)';
+        alert(msg);
       }
     }).catch(err => {
       console.error(err);
@@ -1374,7 +1474,7 @@ function deleteProduct(id) {
   renderProducts(); // update buyer page if open in same browser
 }
 
-function saveProduct(e) {
+async function saveProduct(e) {
   e.preventDefault();
   const id = document.getElementById('edit-id').value;
   const name = document.getElementById('product-name').value.trim();
@@ -1395,33 +1495,58 @@ function saveProduct(e) {
     return;
   }
 
-  let products = getProducts();
-
-  if (id) {
-    // edit
-    const idx = products.findIndex(p => p.id === id);
-    if (idx !== -1) {
-      products[idx] = { ...products[idx], name, price, category, description, image };
-    }
-  } else {
-    // add
-    products.push({
-      id: generateId('p'),
-      name,
-      price,
-      category,
-      description,
-      image
-    });
+  const submitBtn = document.getElementById('submit-product');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'กำลังบันทึก...';
   }
 
-  saveProducts(products);
-  hideProductForm();
-  renderAdminProducts();
-  updateCategoryDatalist();
-  renderProducts(); // อัปเดตหน้าผู้ซื้อ + ปุ่มหมวดหมู่
+  try {
+    // สร้าง id ก่อน ถ้าเป็นสินค้าใหม่ (เพื่อใช้ path อัปโหลด)
+    const productId = id || generateId('p');
 
-  alert(id ? 'แก้ไขสินค้าเรียบร้อย' : 'เพิ่มสินค้าเรียบร้อย');
+    // อัปโหลดรูปขึ้น Firebase ถ้าเป็น data URL
+    if (image && image.startsWith('data:')) {
+      image = await ensureRemoteImageUrl(image, `products/${productId}_${Date.now()}.jpg`);
+    }
+
+    let products = getProducts();
+
+    if (id) {
+      const idx = products.findIndex(p => p.id === id);
+      if (idx !== -1) {
+        products[idx] = { ...products[idx], name, price, category, description, image };
+      }
+    } else {
+      products.push({
+        id: productId,
+        name,
+        price,
+        category,
+        description,
+        image
+      });
+    }
+
+    await saveProducts(products);
+    hideProductForm();
+    renderAdminProducts();
+    updateCategoryDatalist();
+    renderProducts();
+
+    const msg = id ? 'แก้ไขสินค้าเรียบร้อย' : 'เพิ่มสินค้าเรียบร้อย';
+    alert(firebaseReady && image && image.startsWith('http')
+      ? msg + ' (รูปอัปขึ้น Firebase แล้ว)'
+      : msg);
+  } catch (err) {
+    console.error(err);
+    alert('บันทึกสินค้าไม่สำเร็จ');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = id ? 'บันทึกการแก้ไข' : 'บันทึกสินค้า';
+    }
+  }
 }
 
 

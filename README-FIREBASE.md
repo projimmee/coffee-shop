@@ -31,6 +31,32 @@ service cloud.firestore {
 > ⚠️ โหมดทดสอบเปิดให้ทุกคนอ่าน/เขียนได้ ใช้ได้แค่ช่วงพัฒนา  
 > ก่อนขึ้น production ควรจำกัดสิทธิ์
 
+
+## 2.1 สร้าง Firebase Storage (สำหรับรูปสินค้า + QR พร้อมเพย์)
+
+1. เมนูซ้าย → **Build → Storage**
+2. กด **Get started**
+3. เลือก **Start in test mode** (ช่วงพัฒนา)
+4. เลือก region เดียวกับ Firestore ถ้าได้
+
+### กฎ Storage (ทดสอบ)
+ในแท็บ Rules:
+
+```
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if true;
+    }
+  }
+}
+```
+
+> รูปสินค้าจะถูกเก็บที่ `products/...`  
+> รูป PromptPay เก็บที่ `settings/promptpay_...`  
+> URL รูปพร้อมเพย์เก็บใน Firestore `settings/promptpay`
+
 ## 3. ใส่ Config ในโปรเจกต์
 
 เปิดไฟล์ `firebase-config.js` แล้วแก้เป็นค่าของคุณ:

@@ -1,15 +1,15 @@
 // ============================================
-// ใส่ค่า Firebase Config ของคุณที่นี่
-// ได้จาก Firebase Console → Project Settings → Your apps
+// Firebase Config - Coffee Shop
 // ============================================
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyB60FNnlKO1nVvlSbweOoRqG3rsEAzBcCQ",
+  authDomain: "coffee-shop-900ba.firebaseapp.com",
+  projectId: "coffee-shop-900ba",
+  storageBucket: "coffee-shop-900ba.firebasestorage.app",
+  messagingSenderId: "260514385119",
+  appId: "1:260514385119:web:0eb06f03a88a25ee182d6a",
+  measurementId: "G-ZR1TNSEE2Z"
 };
 
-// ตั้งเป็น true เมื่อใส่ config จริงแล้ว
-const USE_FIREBASE = false;
+// เปิดใช้ Firebase (Firestore + Storage)
+const USE_FIREBASE = true;
