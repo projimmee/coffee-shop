@@ -129,9 +129,25 @@
             <textarea id="product-desc" rows="2" placeholder="คำอธิบายสั้น ๆ"></textarea>
           </div>
           <div class="form-group">
-            <label>URL รูปภาพ (ถ้ามี)</label>
-            <input type="url" id="product-image" placeholder="https://example.com/image.jpg" />
-            <small>ถ้าไม่ใส่จะใช้ไอคอนแทน</small>
+            <label>รูปภาพสินค้า</label>
+            <div class="image-upload-area">
+              <div id="image-preview" class="image-preview">
+                <span class="preview-placeholder">🖼️ ยังไม่มีรูป</span>
+              </div>
+              <div class="image-upload-controls">
+                <label class="btn btn-outline btn-sm file-upload-btn">
+                  📷 อัปโหลดรูป
+                  <input type="file" id="product-image-file" accept="image/*" hidden />
+                </label>
+                <button type="button" id="clear-image-btn" class="btn btn-outline btn-sm" style="display:none;">ลบรูป</button>
+              </div>
+              <input type="hidden" id="product-image" value="" />
+              <div class="form-group" style="margin-top:0.6rem; margin-bottom:0;">
+                <label style="font-size:0.85rem; color:var(--text-muted);">หรือใส่ URL รูปภาพ</label>
+                <input type="url" id="product-image-url" placeholder="https://example.com/image.jpg" />
+              </div>
+              <small>รองรับ JPG, PNG, WEBP (แนะนำไม่เกิน 1MB) — ถ้าไม่ใส่จะใช้ไอคอนตามหมวดหมู่</small>
+            </div>
           </div>
           <div class="form-actions">
             <button type="submit" class="btn btn-primary" id="submit-product">บันทึกสินค้า</button>

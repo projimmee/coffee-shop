@@ -920,6 +920,104 @@ function renderAdminProducts() {
   `).join('');
 }
 
+function setImagePreview(src) {
+  const preview = document.getElementById('image-preview');
+  const clearBtn = document.getElementById('clear-image-btn');
+  const hidden = document.getElementById('product-image');
+  if (!preview) return;
+
+  if (src) {
+    preview.innerHTML = `<img src="${src}" alt="preview" onerror="this.parentElement.innerHTML='<span class=\\'preview-placeholder\\'>🖼️ โหลดรูปไม่ได้</span>'">`;
+    if (hidden) hidden.value = src;
+    if (clearBtn) clearBtn.style.display = 'inline-flex';
+  } else {
+    preview.innerHTML = '<span class="preview-placeholder">🖼️ ยังไม่มีรูป</span>';
+    if (hidden) hidden.value = '';
+    if (clearBtn) clearBtn.style.display = 'none';
+  }
+}
+
+function clearProductImage() {
+  setImagePreview('');
+  const fileInput = document.getElementById('product-image-file');
+  const urlInput = document.getElementById('product-image-url');
+  if (fileInput) fileInput.value = '';
+  if (urlInput) urlInput.value = '';
+}
+
+function handleImageFileSelect(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+
+  if (!file.type.startsWith('image/')) {
+    alert('กรุณาเลือกไฟล์รูปภาพเท่านั้น');
+    e.target.value = '';
+    return;
+  }
+
+  // จำกัดขนาด ~1.5MB (base64 จะใหญ่ขึ้นอีก ~33%)
+  if (file.size > 1.5 * 1024 * 1024) {
+    alert('ไฟล์ใหญ่เกินไป (แนะนำไม่เกิน 1.5MB)\nลองย่อรูปก่อนอัปโหลด');
+    e.target.value = '';
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const dataUrl = reader.result;
+    // ถ้าใหญ่เกินไปหลังแปลง ลองย่อด้วย canvas
+    compressImageIfNeeded(dataUrl, 800, 0.75).then(finalSrc => {
+      setImagePreview(finalSrc);
+      const urlInput = document.getElementById('product-image-url');
+      if (urlInput) urlInput.value = ''; // ล้าง URL เมื่ออัปโหลดไฟล์
+    });
+  };
+  reader.onerror = () => {
+    alert('อ่านไฟล์ไม่สำเร็จ');
+    e.target.value = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+function compressImageIfNeeded(dataUrl, maxWidth, quality) {
+  return new Promise(resolve => {
+    // ถ้าเล็กอยู่แล้ว ไม่ต้องย่อ
+    if (dataUrl.length < 200000) {
+      resolve(dataUrl);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width;
+      let h = img.height;
+      if (w > maxWidth) {
+        h = Math.round(h * (maxWidth / w));
+        w = maxWidth;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      try {
+        const compressed = canvas.toDataURL('image/jpeg', quality);
+        resolve(compressed);
+      } catch (err) {
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+function handleImageUrlInput() {
+  const url = document.getElementById('product-image-url')?.value.trim() || '';
+  if (url) {
+    setImagePreview(url);
+  }
+}
+
 function showProductForm(isEdit = false) {
   const wrap = document.getElementById('product-form-wrap');
   if (wrap) wrap.style.display = 'block';
@@ -928,6 +1026,7 @@ function showProductForm(isEdit = false) {
     document.getElementById('edit-id').value = '';
     document.getElementById('form-title').textContent = '➕ เพิ่มสินค้าใหม่';
     document.getElementById('submit-product').textContent = 'บันทึกสินค้า';
+    clearProductImage();
   }
   // เลื่อนไปที่ฟอร์ม
   wrap?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -940,6 +1039,7 @@ function hideProductForm() {
   document.getElementById('edit-id').value = '';
   document.getElementById('form-title').textContent = '➕ เพิ่มสินค้าใหม่';
   document.getElementById('submit-product').textContent = 'บันทึกสินค้า';
+  clearProductImage();
 }
 
 function editProduct(id) {
@@ -958,9 +1058,19 @@ function editProduct(id) {
   document.getElementById('product-price').value = p.price;
   document.getElementById('product-category').value = p.category;
   document.getElementById('product-desc').value = p.description || '';
-  document.getElementById('product-image').value = p.image || '';
   document.getElementById('form-title').textContent = '✏️ แก้ไขสินค้า';
   document.getElementById('submit-product').textContent = 'บันทึกการแก้ไข';
+
+  // ตั้งค่ารูป
+  const img = p.image || '';
+  setImagePreview(img);
+  const urlInput = document.getElementById('product-image-url');
+  if (urlInput) {
+    // ถ้าเป็น URL ภายนอก ใส่ในช่อง URL, ถ้าเป็น data: ปล่อยว่าง
+    urlInput.value = img.startsWith('data:') ? '' : img;
+  }
+  const fileInput = document.getElementById('product-image-file');
+  if (fileInput) fileInput.value = '';
 
   showProductForm(true);
 }
@@ -985,7 +1095,14 @@ function saveProduct(e) {
   const price = Number(document.getElementById('product-price').value);
   const category = document.getElementById('product-category').value.trim();
   const description = document.getElementById('product-desc').value.trim();
-  const image = document.getElementById('product-image').value.trim();
+
+  // รูปจาก hidden (อัปโหลดหรือ URL)
+  let image = document.getElementById('product-image')?.value.trim() || '';
+  // ถ้ามี URL ใหม่และยังไม่ได้ set จาก file ให้ใช้ URL
+  const urlVal = document.getElementById('product-image-url')?.value.trim() || '';
+  if (urlVal && !image.startsWith('data:')) {
+    image = urlVal;
+  }
 
   if (!category) {
     alert('กรุณาระบุหมวดหมู่สินค้า');
@@ -1419,6 +1536,10 @@ function initAdmin() {
   document.getElementById('product-form')?.addEventListener('submit', saveProduct);
   document.getElementById('cancel-edit')?.addEventListener('click', cancelEdit);
   document.getElementById('show-add-product-btn')?.addEventListener('click', () => showProductForm(false));
+  document.getElementById('product-image-file')?.addEventListener('change', handleImageFileSelect);
+  document.getElementById('clear-image-btn')?.addEventListener('click', clearProductImage);
+  document.getElementById('product-image-url')?.addEventListener('change', handleImageUrlInput);
+  document.getElementById('product-image-url')?.addEventListener('blur', handleImageUrlInput);
   document.getElementById('close-order-detail')?.addEventListener('click', closeOrderDetail);
 
   document.querySelectorAll('.modal').forEach(modal => {
