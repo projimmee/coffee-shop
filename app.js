@@ -226,84 +226,93 @@ function initFirebase() {
   }
 }
 
-/**
- * ย่อรูป + แปลงเป็น base64 (data URL)
- * ใช้กับรูปสินค้า / PromptPay — เก็บในฐานข้อมูล (Firestore) ไม่พึ่ง Storage และไม่เก็บใน localStorage
- * @param {string} dataUrl
- * @param {number} maxWidth
- * @param {number} quality
- * @returns {Promise<string>}
- */
-function resizeImageToBase64(dataUrl, maxWidth = 600, quality = 0.72) {
-  return new Promise(resolve => {
-    if (!dataUrl || !dataUrl.startsWith('data:')) {
-      resolve(dataUrl || '');
-      return;
-    }
-    const img = new Image();
-    img.onload = () => {
-      let w = img.width;
-      let h = img.height;
-      if (w > maxWidth || h > maxWidth) {
-        if (w >= h) {
-          h = Math.round(h * (maxWidth / w));
-          w = maxWidth;
-        } else {
-          w = Math.round(w * (maxWidth / h));
-          h = maxWidth;
-        }
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(0, 0, w, h);
-      ctx.drawImage(img, 0, 0, w, h);
-      try {
-        let out = canvas.toDataURL('image/jpeg', quality);
-        if (out.length > 280000 && quality > 0.5) {
-          out = canvas.toDataURL('image/jpeg', 0.55);
-        }
-        if (out.length > 280000) {
-          const scale = 0.7;
-          const c2 = document.createElement('canvas');
-          c2.width = Math.round(w * scale);
-          c2.height = Math.round(h * scale);
-          const ctx2 = c2.getContext('2d');
-          ctx2.fillStyle = '#FFFFFF';
-          ctx2.fillRect(0, 0, c2.width, c2.height);
-          ctx2.drawImage(canvas, 0, 0, c2.width, c2.height);
-          out = c2.toDataURL('image/jpeg', 0.55);
-        }
-        resolve(out);
-      } catch (err) {
-        console.warn('resizeImageToBase64 canvas error:', err);
-        resolve(dataUrl);
-      }
-    };
-    img.onerror = () => resolve(dataUrl);
-    img.src = dataUrl;
-  });
+/** แปลง data URL เป็น Blob */
+function dataUrlToBlob(dataUrl) {
+  const parts = dataUrl.split(',');
+  const mime = (parts[0].match(/:(.*?);/) || [])[1] || 'image/jpeg';
+  const binary = atob(parts[1] || '');
+  const arr = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+  return new Blob([arr], { type: mime });
 }
 
-/** @deprecated ใช้ resizeImageToBase64 */
-function compressImageIfNeeded(dataUrl, maxWidth, quality) {
-  return resizeImageToBase64(dataUrl, maxWidth || 600, quality || 0.72);
+function formatStorageError(e) {
+  const code = e && (e.code || e.name) || '';
+  const msg = (e && e.message) || String(e);
+  if (code === 'storage/unauthorized' || /permission|unauthorized/i.test(msg)) {
+    return 'ไม่มีสิทธิ์อัปโหลด (Storage Rules)\n\nไปที่ Firebase Console → Storage → Rules\nตั้ง allow read, write: if true; แล้ว Publish';
+  }
+  if (code === 'storage/canceled') return 'การอัปโหลดถูกยกเลิก';
+  if (code === 'storage/retry-limit-exceeded') return 'เครือข่ายไม่เสถียร ลองใหม่อีกครั้ง';
+  if (code === 'storage/quota-exceeded') return 'พื้นที่ Storage เต็ม';
+  if (/storage is not defined|firebase.storage is not a function/i.test(msg)) {
+    return 'ยังไม่ได้โหลด Firebase Storage SDK\nตรวจว่ามีไฟล์ firebase-storage-compat.js ในหน้าเว็บ';
+  }
+  if (/bucket|not found|404/i.test(msg)) {
+    return 'ไม่พบ Storage Bucket\nตรวจว่าเปิด Storage ใน Firebase Console แล้ว\nและ storageBucket ใน config ถูกต้อง';
+  }
+  return (code ? code + '\n' : '') + msg;
+}
+
+/**
+ * อัปโหลดรูปขึ้น Firebase Storage
+ * @returns {Promise<string>} download URL หรือ dataUrl เดิมถ้าอัปโหลดไม่ได้
+ */
+async function uploadImageToFirebase(path, dataUrl) {
+  if (!dataUrl || !dataUrl.startsWith('data:')) return dataUrl || '';
+
+  if (!firebaseReady) {
+    console.log('[Upload] Firebase ยังไม่พร้อม');
+    return dataUrl;
+  }
+  if (!storageRef) {
+    console.warn('[Upload] ไม่มี Storage ref');
+    alert('ยังเชื่อม Firebase Storage ไม่ได้\n\n1) เปิด Storage ใน Firebase Console\n2) ตั้ง Rules ให้ read/write ได้\n3) ตรวจว่าโหลด firebase-storage-compat.js แล้ว');
+    return dataUrl;
+  }
+
+  try {
+    const ref = storageRef.child(path);
+    let snapshot;
+
+    // วิธีที่ 1: putString กับ data_url (เหมาะกับรูปจาก canvas/FileReader)
+    try {
+      snapshot = await ref.putString(dataUrl, 'data_url', {
+        cacheControl: 'public,max-age=31536000'
+      });
+    } catch (e1) {
+      console.warn('[Upload] putString ล้มเหลว ลอง put(blob)', e1);
+      // วิธีที่ 2: แปลงเป็น Blob แล้ว put
+      const blob = dataUrlToBlob(dataUrl);
+      snapshot = await ref.put(blob, {
+        contentType: blob.type || 'image/jpeg',
+        cacheControl: 'public,max-age=31536000'
+      });
+    }
+
+    const url = await snapshot.ref.getDownloadURL();
+    console.log('[Upload] สำเร็จ:', path, url.substring(0, 80) + '...');
+    return url;
+  } catch (e) {
+    console.error('[Upload] ล้มเหลว:', path, e);
+    alert('อัปโหลดรูปขึ้น Firebase ไม่สำเร็จ\nจะเก็บในเครื่องชั่วคราว\n\n' + formatStorageError(e));
+    return dataUrl;
+  }
+}
+
+/** ถ้าเป็น data URL ให้ upload แล้วคืน URL, ถ้าเป็น http อยู่แล้วคืนเดิม */
+async function ensureRemoteImageUrl(dataUrlOrUrl, storagePath) {
+  if (!dataUrlOrUrl) return '';
+  if (dataUrlOrUrl.startsWith('http://') || dataUrlOrUrl.startsWith('https://')) {
+    return dataUrlOrUrl;
+  }
+  if (dataUrlOrUrl.startsWith('data:')) {
+    return await uploadImageToFirebase(storagePath, dataUrlOrUrl);
+  }
+  return dataUrlOrUrl;
 }
 
 // --- Products ---
-/** ตัด base64 ออกก่อนเขียน localStorage (ไม่เก็บไฟล์/รูปใน localStorage) */
-function productsForLocalStorage(products) {
-  return (products || []).map(p => {
-    const img = p.image || '';
-    if (img.startsWith('data:')) {
-      return { ...p, image: '' };
-    }
-    return p;
-  });
-}
-
 function getProducts() {
   if (productsCache) return productsCache;
   const data = localStorage.getItem(STORAGE_KEYS.products);
@@ -318,16 +327,13 @@ function getProducts() {
 
 async function saveProducts(products) {
   productsCache = products;
-  // localStorage: ไม่เก็บ base64 — รูปเก็บใน Firestore เท่านั้น
-  try {
-    localStorage.setItem(STORAGE_KEYS.products, JSON.stringify(productsForLocalStorage(products)));
-  } catch (e) {
-    console.warn('saveProducts localStorage:', e);
-  }
+  localStorage.setItem(STORAGE_KEYS.products, JSON.stringify(products));
   if (firebaseReady && db) {
     try {
+      // บันทึกทีละชิ้นด้วย id เป็น document id
       const batch = db.batch();
       const col = db.collection('products');
+      // ลบของเก่าแล้วเขียนใหม่แบบง่าย (สำหรับร้านเล็ก)
       const snap = await col.get();
       snap.docs.forEach(doc => batch.delete(doc.ref));
       products.forEach(p => {
@@ -345,15 +351,14 @@ async function loadProductsFromFirebase() {
   try {
     const snap = await db.collection('products').get();
     if (snap.empty) {
+      // ครั้งแรก: seed ข้อมูลเริ่มต้นขึ้น Firebase
       await saveProducts(DEFAULT_PRODUCTS);
       productsCache = [...DEFAULT_PRODUCTS];
       return productsCache;
     }
     const products = snap.docs.map(d => d.data());
     productsCache = products;
-    try {
-      localStorage.setItem(STORAGE_KEYS.products, JSON.stringify(productsForLocalStorage(products)));
-    } catch (e) { /* ignore */ }
+    localStorage.setItem(STORAGE_KEYS.products, JSON.stringify(products));
     return products;
   } catch (e) {
     console.error('loadProductsFromFirebase:', e);
@@ -435,9 +440,7 @@ function subscribeProducts(callback) {
   return db.collection('products').onSnapshot(snap => {
     const products = snap.docs.map(d => d.data());
     productsCache = products;
-    try {
-      localStorage.setItem(STORAGE_KEYS.products, JSON.stringify(productsForLocalStorage(products)));
-    } catch (e) { /* ignore */ }
+    localStorage.setItem(STORAGE_KEYS.products, JSON.stringify(products));
     callback(products);
   }, err => console.error('subscribeProducts:', err));
 }
@@ -1050,16 +1053,13 @@ function completeOrderWithReceipt(orderId) {
   });
 }
 
-// PromptPay เก็บใน memory + Firestore เท่านั้น (ไม่เก็บ base64 ใน localStorage)
-let promptpayCache = '';
-
 function getPromptPayImage() {
-  if (promptpayCache) return promptpayCache;
   try {
-    const old = localStorage.getItem(STORAGE_KEYS.promptpay) || '';
-    if (old && !old.startsWith('data:')) return old;
-  } catch (e) { /* ignore */ }
-  return '';
+    return localStorage.getItem(STORAGE_KEYS.promptpay) || '';
+  } catch (e) {
+    console.error('getPromptPayImage:', e);
+    return '';
+  }
 }
 
 async function loadPromptPayFromFirebase() {
@@ -1070,10 +1070,12 @@ async function loadPromptPayFromFirebase() {
   try {
     const doc = await db.collection('settings').doc('promptpay').get();
     if (doc.exists && doc.data().imageUrl) {
-      promptpayCache = doc.data().imageUrl;
-      try { localStorage.removeItem(STORAGE_KEYS.promptpay); } catch (e) { /* ignore */ }
+      const url = doc.data().imageUrl;
+      try {
+        localStorage.setItem(STORAGE_KEYS.promptpay, url);
+      } catch (e) { /* URL สั้น ปกติไม่เต็ม */ }
       updatePromptPayPreview();
-      return promptpayCache;
+      return url;
     }
   } catch (e) {
     console.error('loadPromptPayFromFirebase:', e);
@@ -1083,10 +1085,17 @@ async function loadPromptPayFromFirebase() {
 }
 
 async function savePromptPayImage(dataUrl) {
-  // เก็บ base64 ใน Firestore เท่านั้น — ไม่เก็บไฟล์ใน localStorage
-  const finalUrl = dataUrl || '';
-  promptpayCache = finalUrl;
+  let finalUrl = dataUrl || '';
 
+  // อัปโหลดขึ้น Firebase Storage ถ้าเป็น data URL
+  if (finalUrl && finalUrl.startsWith('data:') && firebaseReady) {
+    finalUrl = await uploadImageToFirebase(
+      'settings/promptpay_' + Date.now() + '.jpg',
+      finalUrl
+    );
+  }
+
+  // บันทึก URL ลง Firestore
   if (firebaseReady && db) {
     try {
       if (finalUrl) {
@@ -1099,15 +1108,24 @@ async function savePromptPayImage(dataUrl) {
       }
     } catch (e) {
       console.error('save promptpay firestore:', e);
-      alert('บันทึกรูปพร้อมเพย์ขึ้น Firebase ไม่สำเร็จ');
-      return false;
     }
-  } else {
-    console.log('[PromptPay] โหมด offline — เก็บใน memory เท่านั้น (ไม่เขียน localStorage)');
   }
 
-  try { localStorage.removeItem(STORAGE_KEYS.promptpay); } catch (e) { /* ignore */ }
-
+  // เก็บใน localStorage (URL สั้น หรือ data URL fallback)
+  try {
+    if (finalUrl) {
+      localStorage.setItem(STORAGE_KEYS.promptpay, finalUrl);
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.promptpay);
+    }
+  } catch (e) {
+    console.error('savePromptPayImage localStorage:', e);
+    // ถ้าเป็น URL จาก Firebase จะสั้น ไม่น่าเต็ม — ถ้า data URL เต็ม แจ้งเตือน
+    if (finalUrl && finalUrl.startsWith('data:')) {
+      alert('พื้นที่จัดเก็บในเครื่องเต็ม กรุณาเปิด Firebase เพื่อเก็บรูปออนไลน์');
+      return false;
+    }
+  }
   updatePromptPayPreview();
   return true;
 }
@@ -1140,23 +1158,24 @@ function handlePromptPayUpload(e) {
     return;
   }
 
-  if (file.size > 8 * 1024 * 1024) {
-    alert('ไฟล์ใหญ่เกินไป (สูงสุด 8MB)');
+  // ยอมรับไฟล์ใหญ่ขึ้น แล้วค่อยย่อ
+  if (file.size > 5 * 1024 * 1024) {
+    alert('ไฟล์ใหญ่เกินไป (สูงสุด 5MB)');
     input.value = '';
     return;
   }
 
-  const preview = document.getElementById('promptpay-preview');
-  if (preview) preview.innerHTML = '<span class="preview-placeholder">กำลังย่อรูป...</span>';
-
   const reader = new FileReader();
   reader.onload = () => {
-    resizeImageToBase64(reader.result, 400, 0.75).then(async src => {
+    // ย่อรูป QR ให้ชัดแต่ไม่ใหญ่เกิน (max 400px, quality 0.7)
+    compressImageIfNeeded(reader.result, 400, 0.7).then(async src => {
       let finalSrc = src;
-      if (src.length > 250000) {
-        finalSrc = await resizeImageToBase64(src, 320, 0.6);
+      if (src.length > 400000) {
+        finalSrc = await compressImageIfNeeded(src, 300, 0.6);
       }
-      if (preview) preview.innerHTML = '<span class="preview-placeholder">กำลังบันทึก...</span>';
+      // แสดงสถานะกำลังอัปโหลด
+      const preview = document.getElementById('promptpay-preview');
+      if (preview) preview.innerHTML = '<span class="preview-placeholder">กำลังอัปโหลด...</span>';
 
       const ok = await savePromptPayImage(finalSrc);
       if (ok !== false) {
@@ -1165,21 +1184,19 @@ function handlePromptPayUpload(e) {
         document.querySelector('[data-tab="settings"]')?.classList.add('active');
         document.getElementById('tab-settings')?.classList.add('active');
         updatePromptPayPreview();
-        alert(firebaseReady
-          ? 'บันทึกรูปพร้อมเพย์เรียบร้อย'
-          : 'บันทึกรูปพร้อมเพย์ใน memory แล้ว\n(เปิด Firebase เพื่อใช้ข้ามเครื่อง)');
+        const msg = firebaseReady
+          ? 'บันทึกรูปพร้อมเพย์เรียบร้อย (อัปขึ้น Firebase แล้ว)'
+          : 'บันทึกรูปพร้อมเพย์ในเครื่องแล้ว\n(เปิด Firebase เพื่อใช้ข้ามเครื่อง)';
+        alert(msg);
       }
     }).catch(err => {
       console.error(err);
       alert('ประมวลผลรูปไม่สำเร็จ');
-      input.value = '';
-      updatePromptPayPreview();
     });
   };
   reader.onerror = () => {
     alert('อ่านไฟล์ไม่สำเร็จ');
     input.value = '';
-    updatePromptPayPreview();
   };
   reader.readAsDataURL(file);
 }
@@ -1377,36 +1394,60 @@ function handleImageFileSelect(e) {
     return;
   }
 
-  if (file.size > 8 * 1024 * 1024) {
-    alert('ไฟล์ใหญ่เกินไป (สูงสุด 8MB)');
+  // จำกัดขนาด ~1.5MB (base64 จะใหญ่ขึ้นอีก ~33%)
+  if (file.size > 1.5 * 1024 * 1024) {
+    alert('ไฟล์ใหญ่เกินไป (แนะนำไม่เกิน 1.5MB)\nลองย่อรูปก่อนอัปโหลด');
     e.target.value = '';
     return;
   }
 
-  const preview = document.getElementById('image-preview');
-  if (preview) {
-    preview.innerHTML = '<span class="preview-placeholder">กำลังย่อรูป...</span>';
-  }
-
   const reader = new FileReader();
   reader.onload = () => {
-    resizeImageToBase64(reader.result, 600, 0.72).then(finalSrc => {
+    const dataUrl = reader.result;
+    // ถ้าใหญ่เกินไปหลังแปลง ลองย่อด้วย canvas
+    compressImageIfNeeded(dataUrl, 800, 0.75).then(finalSrc => {
       setImagePreview(finalSrc);
       const urlInput = document.getElementById('product-image-url');
-      if (urlInput) urlInput.value = '';
-    }).catch(err => {
-      console.error(err);
-      alert('ประมวลผลรูปไม่สำเร็จ');
-      e.target.value = '';
-      setImagePreview('');
+      if (urlInput) urlInput.value = ''; // ล้าง URL เมื่ออัปโหลดไฟล์
     });
   };
   reader.onerror = () => {
     alert('อ่านไฟล์ไม่สำเร็จ');
     e.target.value = '';
-    setImagePreview('');
   };
   reader.readAsDataURL(file);
+}
+
+function compressImageIfNeeded(dataUrl, maxWidth, quality) {
+  return new Promise(resolve => {
+    // ถ้าเล็กอยู่แล้ว ไม่ต้องย่อ
+    if (dataUrl.length < 200000) {
+      resolve(dataUrl);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width;
+      let h = img.height;
+      if (w > maxWidth) {
+        h = Math.round(h * (maxWidth / w));
+        w = maxWidth;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      try {
+        const compressed = canvas.toDataURL('image/jpeg', quality);
+        resolve(compressed);
+      } catch (err) {
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
 }
 
 function handleImageUrlInput() {
@@ -1514,9 +1555,13 @@ async function saveProduct(e) {
   }
 
   try {
+    // สร้าง id ก่อน ถ้าเป็นสินค้าใหม่ (เพื่อใช้ path อัปโหลด)
     const productId = id || generateId('p');
 
-    // รูปเป็น base64 หรือ URL — เก็บใน Firestore ผ่าน saveProducts (ไม่เก็บ base64 ใน localStorage)
+    // อัปโหลดรูปขึ้น Firebase ถ้าเป็น data URL
+    if (image && image.startsWith('data:')) {
+      image = await ensureRemoteImageUrl(image, `products/${productId}_${Date.now()}.jpg`);
+    }
 
     let products = getProducts();
 
@@ -1542,7 +1587,10 @@ async function saveProduct(e) {
     updateCategoryDatalist();
     renderProducts();
 
-    alert(id ? 'แก้ไขสินค้าเรียบร้อย' : 'เพิ่มสินค้าเรียบร้อย');
+    const msg = id ? 'แก้ไขสินค้าเรียบร้อย' : 'เพิ่มสินค้าเรียบร้อย';
+    alert(firebaseReady && image && image.startsWith('http')
+      ? msg + ' (รูปอัปขึ้น Firebase แล้ว)'
+      : msg);
   } catch (err) {
     console.error(err);
     alert('บันทึกสินค้าไม่สำเร็จ');
