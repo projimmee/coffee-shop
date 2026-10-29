@@ -152,7 +152,7 @@
                 <label style="font-size:0.85rem; color:var(--text-muted);">หรือใส่ URL รูปภาพ</label>
                 <input type="url" id="product-image-url" placeholder="https://example.com/image.jpg" />
               </div>
-              <small>รองรับ JPG, PNG, WEBP (แนะนำไม่เกิน 1MB) — ถ้าไม่ใส่จะใช้ไอคอนตามหมวดหมู่</small>
+              <small>รองรับ JPG, PNG, WEBP — ระบบย่อขนาดอัตโนมัติแล้วเก็บเป็น base64 ในฐานข้อมูล (ไม่เก็บใน localStorage)</small>
             </div>
           </div>
           <div class="form-actions">
@@ -185,7 +185,7 @@
             <input type="file" id="promptpay-file" accept="image/png,image/jpeg,image/jpg,image/webp,image/gif" />
             <button type="button" id="clear-promptpay-btn" class="btn btn-outline btn-sm" style="display:none;">ลบรูป</button>
           </div>
-          <small>เลือกไฟล์รูป QR พร้อมเพย์ (JPG/PNG) แนะนำไม่เกิน 1MB</small>
+          <small>เลือกไฟล์รูป QR พร้อมเพย์ (JPG/PNG) — ระบบย่อขนาดอัตโนมัติแล้วเก็บเป็น base64 ในฐานข้อมูล</small>
         </div>
       </div>
     </section>
