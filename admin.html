@@ -120,12 +120,14 @@
           </div>
           <div class="form-group">
             <label>หมวดหมู่ *</label>
-            <select id="product-category" required>
-              <option value="กาแฟ">กาแฟ</option>
-              <option value="ชา">ชา</option>
-              <option value="ของหวาน">ของหวาน</option>
-              <option value="เครื่องดื่มอื่นๆ">เครื่องดื่มอื่นๆ</option>
-            </select>
+            <input type="text" id="product-category" list="category-list" required placeholder="เช่น กาแฟ, ชา, ของหวาน หรือพิมพ์หมวดใหม่" autocomplete="off" />
+            <datalist id="category-list">
+              <option value="กาแฟ"></option>
+              <option value="ชา"></option>
+              <option value="ของหวาน"></option>
+              <option value="เครื่องดื่มอื่นๆ"></option>
+            </datalist>
+            <small>พิมพ์ชื่อหมวดใหม่ได้ หรือเลือกจากรายการที่มี</small>
           </div>
           <div class="form-group">
             <label>รายละเอียด</label>

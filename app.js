@@ -131,6 +131,49 @@ function getIcon(category) {
   return icons[category] || '🍽️';
 }
 
+function getUniqueCategories() {
+  const products = getProducts();
+  const set = new Set();
+  products.forEach(p => {
+    if (p.category && p.category.trim()) set.add(p.category.trim());
+  });
+  // เรียงตามชื่อ ไทย/อังกฤษ
+  return Array.from(set).sort((a, b) => a.localeCompare(b, 'th'));
+}
+
+function updateCategoryDatalist() {
+  const list = document.getElementById('category-list');
+  if (!list) return;
+  const cats = getUniqueCategories();
+  const defaults = ['กาแฟ', 'ชา', 'ของหวาน', 'เครื่องดื่มอื่นๆ'];
+  const all = [...new Set([...defaults, ...cats])];
+  list.innerHTML = all.map(c => `<option value="${c}"></option>`).join('');
+}
+
+function renderCategoryFilters() {
+  const container = document.getElementById('category-filters');
+  if (!container) return;
+
+  const cats = getUniqueCategories();
+  const current = currentCategory || 'all';
+
+  let html = `<button class="filter-btn ${current === 'all' ? 'active' : ''}" data-category="all">ทั้งหมด</button>`;
+  cats.forEach(c => {
+    html += `<button class="filter-btn ${current === c ? 'active' : ''}" data-category="${c}">${c}</button>`;
+  });
+  container.innerHTML = html;
+
+  // re-bind clicks
+  container.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      container.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentCategory = btn.dataset.category;
+      renderProducts();
+    });
+  });
+}
+
 // ===== Storage (localStorage + Firebase) =====
 let db = null;
 let firebaseReady = false;
@@ -307,6 +350,9 @@ function renderProducts() {
   const grid = document.getElementById('product-grid');
   if (!grid) return;
 
+  // อัปเดตปุ่มหมวดหมู่ให้ตรงกับสินค้าปัจจุบัน
+  renderCategoryFilters();
+
   let products = getProducts();
   if (currentCategory !== 'all') {
     products = products.filter(p => p.category === currentCategory);
@@ -344,14 +390,8 @@ function renderProducts() {
 }
 
 function setupFilters() {
-  document.querySelectorAll('.filter-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      currentCategory = btn.dataset.category;
-      renderProducts();
-    });
-  });
+  // หมวดหมู่ถูก bind ใน renderCategoryFilters แล้ว
+  renderCategoryFilters();
 }
 
 // ===== Cart =====
@@ -548,12 +588,14 @@ function placeOrder(e) {
 
   const name = document.getElementById('customer-name').value.trim();
   const phone = document.getElementById('customer-phone').value.trim();
+  const location = document.getElementById('customer-location')?.value.trim() || '';
   const note = document.getElementById('customer-note').value.trim();
 
   const order = {
     id: getNextOrderNumber(),
     customerName: name,
     customerPhone: phone,
+    deliveryLocation: location,
     note: note,
     items: cart.map(i => ({ ...i })),
     total: cart.reduce((s, i) => s + i.price * i.qty, 0),
@@ -621,10 +663,12 @@ function showAdminDashboard() {
   if (firebaseReady) {
     loadProductsFromFirebase().then(() => {
       renderAdminProducts();
+      updateCategoryDatalist();
       renderProducts();
     });
     subscribeProducts(() => {
       renderAdminProducts();
+      updateCategoryDatalist();
     });
     subscribeOrders((orders) => {
       ordersCache = orders;
@@ -633,6 +677,7 @@ function showAdminDashboard() {
   } else {
     renderOrders();
     renderAdminProducts();
+    updateCategoryDatalist();
     startRealtimeSync();
     startOrdersPolling();
   }
@@ -727,6 +772,7 @@ function renderOrders() {
         <div class="order-meta">
           <span>👤 ${o.customerName}</span>
           <span>📞 ${o.customerPhone}</span>
+          ${o.deliveryLocation ? `<span>📍 ${o.deliveryLocation}</span>` : ''}
           <span>🕒 ${formatDate(o.createdAt)}</span>
         </div>
         <div style="margin-top:0.35rem; font-size:0.88rem; color:var(--text-muted);">
@@ -793,6 +839,7 @@ function viewOrderDetail(orderId) {
     <div class="detail-row"><span>หมายเลข</span><strong>${order.id}</strong></div>
     <div class="detail-row"><span>ลูกค้า</span><strong>${order.customerName}</strong></div>
     <div class="detail-row"><span>เบอร์โทร</span><strong>${order.customerPhone}</strong></div>
+    ${order.deliveryLocation ? `<div class="detail-row"><span>สถานที่จัดส่ง</span><strong>📍 ${order.deliveryLocation}</strong></div>` : ''}
     <div class="detail-row"><span>เวลาสั่ง</span><strong>${formatDate(order.createdAt)}</strong></div>
     <div class="detail-row"><span>สถานะ</span>
       <span class="status-badge status-${order.status}">${statusLabel[order.status]}</span>
@@ -908,6 +955,7 @@ function deleteProduct(id) {
   let products = getProducts().filter(p => p.id !== id);
   saveProducts(products);
   renderAdminProducts();
+  updateCategoryDatalist();
   renderProducts(); // update buyer page if open in same browser
 }
 
@@ -916,9 +964,14 @@ function saveProduct(e) {
   const id = document.getElementById('edit-id').value;
   const name = document.getElementById('product-name').value.trim();
   const price = Number(document.getElementById('product-price').value);
-  const category = document.getElementById('product-category').value;
+  const category = document.getElementById('product-category').value.trim();
   const description = document.getElementById('product-desc').value.trim();
   const image = document.getElementById('product-image').value.trim();
+
+  if (!category) {
+    alert('กรุณาระบุหมวดหมู่สินค้า');
+    return;
+  }
 
   let products = getProducts();
 
@@ -943,6 +996,8 @@ function saveProduct(e) {
   saveProducts(products);
   cancelEdit();
   renderAdminProducts();
+  updateCategoryDatalist();
+  renderProducts(); // อัปเดตหน้าผู้ซื้อ + ปุ่มหมวดหมู่
 
   // switch back to products tab
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -1140,6 +1195,7 @@ function searchOrder() {
       <div class="track-info-list">
         <div class="track-info-row"><span>หมายเลข</span><strong>${order.id}</strong></div>
         <div class="track-info-row"><span>ลูกค้า</span><strong>${order.customerName}</strong></div>
+        ${order.deliveryLocation ? `<div class="track-info-row"><span>สถานที่จัดส่ง</span><strong>📍 ${order.deliveryLocation}</strong></div>` : ''}
         <div class="track-info-row"><span>เวลาสั่ง</span><strong>${formatDate(order.createdAt)}</strong></div>
         ${order.note ? `<div class="track-info-row"><span>หมายเหตุ</span><strong>${order.note}</strong></div>` : ''}
         <div style="margin-top:0.6rem; padding-top:0.5rem; border-top:1px dashed var(--border);">

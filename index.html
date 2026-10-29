@@ -33,12 +33,9 @@
   </header>
 
   <!-- Category Filter -->
-  <section class="filters">
+  <section class="filters" id="category-filters">
     <button class="filter-btn active" data-category="all">ทั้งหมด</button>
-    <button class="filter-btn" data-category="กาแฟ">กาแฟ</button>
-    <button class="filter-btn" data-category="ชา">ชา</button>
-    <button class="filter-btn" data-category="ของหวาน">ของหวาน</button>
-    <button class="filter-btn" data-category="เครื่องดื่มอื่นๆ">เครื่องดื่มอื่นๆ</button>
+    <!-- หมวดหมู่จะถูกสร้างอัตโนมัติจากสินค้า -->
   </section>
 
   <!-- Product Grid -->
@@ -82,6 +79,10 @@
         <div class="form-group">
           <label>เบอร์โทร *</label>
           <input type="tel" id="customer-phone" required placeholder="08x-xxx-xxxx" />
+        </div>
+        <div class="form-group">
+          <label>สถานที่จัดส่ง *</label>
+          <input type="text" id="customer-location" required placeholder="เช่น โต๊ะ 5, หน้าร้าน, อาคาร A ชั้น 2" />
         </div>
         <div class="form-group">
           <label>หมายเหตุ (ถ้ามี)</label>
