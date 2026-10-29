@@ -192,14 +192,32 @@ function initFirebase() {
       firebase.initializeApp(firebaseConfig);
     }
     db = firebase.firestore();
+
+    // โหลด Firebase Storage
     if (typeof firebase.storage === 'function') {
-      storageRef = firebase.storage().ref();
+      try {
+        // ใช้ bucket จาก config ก่อน
+        storageRef = firebase.storage().ref();
+        console.log('[Storage] Storage bucket:', firebaseConfig.storageBucket);
+      } catch (storageErr) {
+        console.warn('[Storage] init default bucket ล้มเหลว ลอง appspot.com', storageErr);
+        try {
+          // fallback สำหรับโปรเจกต์เก่า/ใหม่
+          const altBucket = (firebaseConfig.projectId || 'coffee-shop-900ba') + '.appspot.com';
+          storageRef = firebase.app().storage('gs://' + altBucket).ref();
+          console.log('[Storage] ใช้ bucket สำรอง:', altBucket);
+        } catch (e2) {
+          storageRef = null;
+          console.error('[Storage] ไม่สามารถเปิด Storage ได้', e2);
+        }
+      }
     } else {
       storageRef = null;
-      console.warn('[Storage] Firebase Storage SDK ยังไม่โหลด — รูปจะเก็บแบบ local');
+      console.warn('[Storage] ไม่พบ firebase-storage SDK — ตรวจว่าโหลด firebase-storage-compat.js แล้ว');
     }
+
     firebaseReady = true;
-    console.log('[Storage] เชื่อม Firebase สำเร็จ');
+    console.log('[Storage] เชื่อม Firebase สำเร็จ | Storage:', !!storageRef);
     return true;
   } catch (e) {
     console.error('[Storage] Firebase error:', e);
@@ -218,31 +236,66 @@ function dataUrlToBlob(dataUrl) {
   return new Blob([arr], { type: mime });
 }
 
+function formatStorageError(e) {
+  const code = e && (e.code || e.name) || '';
+  const msg = (e && e.message) || String(e);
+  if (code === 'storage/unauthorized' || /permission|unauthorized/i.test(msg)) {
+    return 'ไม่มีสิทธิ์อัปโหลด (Storage Rules)\n\nไปที่ Firebase Console → Storage → Rules\nตั้ง allow read, write: if true; แล้ว Publish';
+  }
+  if (code === 'storage/canceled') return 'การอัปโหลดถูกยกเลิก';
+  if (code === 'storage/retry-limit-exceeded') return 'เครือข่ายไม่เสถียร ลองใหม่อีกครั้ง';
+  if (code === 'storage/quota-exceeded') return 'พื้นที่ Storage เต็ม';
+  if (/storage is not defined|firebase.storage is not a function/i.test(msg)) {
+    return 'ยังไม่ได้โหลด Firebase Storage SDK\nตรวจว่ามีไฟล์ firebase-storage-compat.js ในหน้าเว็บ';
+  }
+  if (/bucket|not found|404/i.test(msg)) {
+    return 'ไม่พบ Storage Bucket\nตรวจว่าเปิด Storage ใน Firebase Console แล้ว\nและ storageBucket ใน config ถูกต้อง';
+  }
+  return (code ? code + '\n' : '') + msg;
+}
+
 /**
  * อัปโหลดรูปขึ้น Firebase Storage
- * @param {string} path เช่น products/p1.jpg หรือ settings/promptpay.jpg
- * @param {string} dataUrl data:image/...
  * @returns {Promise<string>} download URL หรือ dataUrl เดิมถ้าอัปโหลดไม่ได้
  */
 async function uploadImageToFirebase(path, dataUrl) {
   if (!dataUrl || !dataUrl.startsWith('data:')) return dataUrl || '';
-  if (!firebaseReady || !storageRef) {
-    console.log('[Upload] ไม่มี Firebase Storage — เก็บแบบ local');
+
+  if (!firebaseReady) {
+    console.log('[Upload] Firebase ยังไม่พร้อม');
     return dataUrl;
   }
+  if (!storageRef) {
+    console.warn('[Upload] ไม่มี Storage ref');
+    alert('ยังเชื่อม Firebase Storage ไม่ได้\n\n1) เปิด Storage ใน Firebase Console\n2) ตั้ง Rules ให้ read/write ได้\n3) ตรวจว่าโหลด firebase-storage-compat.js แล้ว');
+    return dataUrl;
+  }
+
   try {
-    const blob = dataUrlToBlob(dataUrl);
     const ref = storageRef.child(path);
-    const snapshot = await ref.put(blob, {
-      contentType: blob.type || 'image/jpeg',
-      cacheControl: 'public,max-age=31536000'
-    });
+    let snapshot;
+
+    // วิธีที่ 1: putString กับ data_url (เหมาะกับรูปจาก canvas/FileReader)
+    try {
+      snapshot = await ref.putString(dataUrl, 'data_url', {
+        cacheControl: 'public,max-age=31536000'
+      });
+    } catch (e1) {
+      console.warn('[Upload] putString ล้มเหลว ลอง put(blob)', e1);
+      // วิธีที่ 2: แปลงเป็น Blob แล้ว put
+      const blob = dataUrlToBlob(dataUrl);
+      snapshot = await ref.put(blob, {
+        contentType: blob.type || 'image/jpeg',
+        cacheControl: 'public,max-age=31536000'
+      });
+    }
+
     const url = await snapshot.ref.getDownloadURL();
-    console.log('[Upload] สำเร็จ:', path);
+    console.log('[Upload] สำเร็จ:', path, url.substring(0, 80) + '...');
     return url;
   } catch (e) {
     console.error('[Upload] ล้มเหลว:', path, e);
-    alert('อัปโหลดรูปขึ้น Firebase ไม่สำเร็จ\nจะเก็บในเครื่องชั่วคราว\n\n' + (e.message || e));
+    alert('อัปโหลดรูปขึ้น Firebase ไม่สำเร็จ\nจะเก็บในเครื่องชั่วคราว\n\n' + formatStorageError(e));
     return dataUrl;
   }
 }
