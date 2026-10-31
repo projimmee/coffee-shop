@@ -1711,125 +1711,28 @@ body {
   padding: 0.4rem 0;
 }
 
+/* ===== Track list (หลายออเดอร์ต่อเบอร์) ===== */
+.track-list-header {
+  text-align: center;
+  margin-bottom: 0.9rem;
+}
 
-/* ===== Delivery type + GPS ===== */
-.delivery-type-toggle {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.55rem;
-}
-.delivery-type-btn {
-  background: white;
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 0.75rem 0.6rem;
-  font-family: inherit;
-  font-size: 0.95rem;
-  font-weight: 550;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: var(--transition);
-  min-height: 48px;
-}
-.delivery-type-btn:hover { border-color: var(--primary-light); color: var(--primary); }
-.delivery-type-btn.active {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: white;
-  box-shadow: 0 4px 12px rgba(93, 64, 55, 0.25);
-}
-.delivery-map-actions { margin-top: 0.35rem; }
-.pinned-location-info {
-  background: var(--bg-warm);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 0.75rem 0.9rem;
-  margin-top: 0.6rem;
-}
-.pinned-coords {
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--primary);
-  margin-bottom: 0.3rem;
-}
-.maps-link {
-  color: var(--primary);
-  font-size: 0.88rem;
-  font-weight: 600;
-  text-decoration: none;
-}
-.maps-link:hover { text-decoration: underline; }
-
-.order-gps-box {
-  margin-top: 0.65rem;
-  background: linear-gradient(135deg, #E8F5E9 0%, #F1F8E9 100%);
-  border: 1px solid #C8E6C9;
-  border-radius: 12px;
-  padding: 0.75rem 0.9rem;
-}
-.order-gps-box.order-gps-no-pin {
-  background: var(--bg-warm);
-  border-color: var(--border);
-}
-.order-gps-title {
-  font-size: 0.82rem;
-  font-weight: 700;
-  color: #2E7D32;
-  margin-bottom: 0.25rem;
-}
-.order-gps-no-pin .order-gps-title { color: var(--text-muted); }
-.order-gps-coords {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: var(--primary-dark);
-  margin: 0.2rem 0;
-  word-break: break-all;
-}
-.order-gps-addr {
-  font-size: 0.9rem;
-  color: var(--text);
-  margin: 0.2rem 0 0.4rem;
-  line-height: 1.4;
-}
-.order-gps-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
+.track-list-summary {
   margin-top: 0.45rem;
-}
-.order-gps-actions .btn { text-decoration: none; }
-.order-map-embed {
-  margin-top: 0.7rem;
-  border-radius: 12px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-}
-.detail-gps-box { margin: 0.9rem 0; }
-.delivery-type-tag {
-  display: inline-block;
-  padding: 0.15rem 0.55rem;
-  border-radius: 20px;
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-.delivery-type-tag.is-delivery { background: #E8F5E9; color: #2E7D32; }
-.delivery-type-tag.is-pickup { background: #FFF4E5; color: #C47A00; }
-.order-pickup-loc {
-  margin-top: 0.4rem;
-  font-size: 0.9rem;
+  font-size: 0.92rem;
   color: var(--text-muted);
 }
-.order-actions a.btn {
-  text-decoration: none;
-  display: inline-flex;
-  align-items: center;
+
+.track-list-summary strong {
+  color: var(--primary);
 }
 
-.track-list-header { text-align: center; margin-bottom: 0.9rem; }
-.track-list-summary { margin-top: 0.45rem; font-size: 0.92rem; color: var(--text-muted); }
-.track-list-summary strong { color: var(--primary); }
-.track-orders-list { display: flex; flex-direction: column; gap: 0.9rem; }
+.track-orders-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
 .track-card-header {
   display: flex;
   justify-content: space-between;
@@ -1837,7 +1740,21 @@ body {
   gap: 0.5rem;
   margin-bottom: 0.5rem;
 }
-.track-order-id { font-size: 1.15rem; font-weight: 700; color: var(--primary-dark); }
-.track-status-card.track-card-compact { text-align: left; }
-.track-status-card.track-card-compact .track-status-desc { text-align: left; }
-.track-status-card.track-card-compact .queue-badge { display: inline-flex; }
+
+.track-order-id {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+
+.track-status-card.track-card-compact {
+  text-align: left;
+}
+
+.track-status-card.track-card-compact .track-status-desc {
+  text-align: left;
+}
+
+.track-status-card.track-card-compact .queue-badge {
+  display: inline-flex;
+}
