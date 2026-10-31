@@ -1868,17 +1868,14 @@ async function loadPromptPayFromFirebase() {
 }
 
 async function savePromptPayImage(dataUrl) {
+  // เก็บ base64 ในฐานข้อมูลเดิม (localStorage + Firestore settings/promptpay)
+  // ไม่ใช้ Firebase Storage
   let finalUrl = dataUrl || '';
 
-  // อัปโหลดขึ้น Firebase Storage ถ้าเป็น data URL
-  if (finalUrl && finalUrl.startsWith('data:') && firebaseReady) {
-    finalUrl = await uploadImageToFirebase(
-      'settings/promptpay_' + Date.now() + '.jpg',
-      finalUrl
-    );
+  if (finalUrl && finalUrl.startsWith('data:') && finalUrl.length > 250000) {
+    finalUrl = await compressImageIfNeeded(finalUrl, 360, 0.65);
   }
 
-  // บันทึก URL ลง Firestore
   if (firebaseReady && db) {
     try {
       if (finalUrl) {
@@ -1894,7 +1891,6 @@ async function savePromptPayImage(dataUrl) {
     }
   }
 
-  // เก็บใน localStorage (URL สั้น หรือ data URL fallback)
   try {
     if (finalUrl) {
       localStorage.setItem(STORAGE_KEYS.promptpay, finalUrl);
@@ -1903,10 +1899,11 @@ async function savePromptPayImage(dataUrl) {
     }
   } catch (e) {
     console.error('savePromptPayImage localStorage:', e);
-    // ถ้าเป็น URL จาก Firebase จะสั้น ไม่น่าเต็ม — ถ้า data URL เต็ม แจ้งเตือน
     if (finalUrl && finalUrl.startsWith('data:')) {
-      alert('พื้นที่จัดเก็บในเครื่องเต็ม กรุณาเปิด Firebase เพื่อเก็บรูปออนไลน์');
-      return false;
+      alert('พื้นที่จัดเก็บในเครื่องเต็ม\nถ้าเปิด Firebase ไว้ รูปจะถูกบันทึกบนเซิร์ฟเวอร์แล้ว');
+      // ยังถือว่าสำเร็จถ้า Firestore รับได้
+      updatePromptPayPreview();
+      return !!firebaseReady;
     }
   }
   updatePromptPayPreview();
@@ -1941,7 +1938,7 @@ function handlePromptPayUpload(e) {
     return;
   }
 
-  // ยอมรับไฟล์ใหญ่ขึ้น แล้วค่อยย่อ
+  // ยอมรับไฟล์ใหญ่ขึ้น แล้วค่อยย่อเป็น base64
   if (file.size > 5 * 1024 * 1024) {
     alert('ไฟล์ใหญ่เกินไป (สูงสุด 5MB)');
     input.value = '';
@@ -1950,15 +1947,14 @@ function handlePromptPayUpload(e) {
 
   const reader = new FileReader();
   reader.onload = () => {
-    // ย่อรูป QR ให้ชัดแต่ไม่ใหญ่เกิน (max 400px, quality 0.7)
+    // ย่อขนาดอัตโนมัติ → เก็บ base64 ในฐานข้อมูลเดิม
     compressImageIfNeeded(reader.result, 400, 0.7).then(async src => {
       let finalSrc = src;
-      if (src.length > 400000) {
-        finalSrc = await compressImageIfNeeded(src, 300, 0.6);
+      if (src.length > 180000) {
+        finalSrc = await compressImageIfNeeded(src, 320, 0.6);
       }
-      // แสดงสถานะกำลังอัปโหลด
       const preview = document.getElementById('promptpay-preview');
-      if (preview) preview.innerHTML = '<span class="preview-placeholder">กำลังอัปโหลด...</span>';
+      if (preview) preview.innerHTML = '<span class="preview-placeholder">กำลังบันทึก...</span>';
 
       const ok = await savePromptPayImage(finalSrc);
       if (ok !== false) {
@@ -1967,10 +1963,8 @@ function handlePromptPayUpload(e) {
         document.querySelector('[data-tab="settings"]')?.classList.add('active');
         document.getElementById('tab-settings')?.classList.add('active');
         updatePromptPayPreview();
-        const msg = firebaseReady
-          ? 'บันทึกรูปพร้อมเพย์เรียบร้อย (อัปขึ้น Firebase แล้ว)'
-          : 'บันทึกรูปพร้อมเพย์ในเครื่องแล้ว\n(เปิด Firebase เพื่อใช้ข้ามเครื่อง)';
-        alert(msg);
+        const kb = Math.round((finalSrc.length * 0.75) / 1024);
+        alert('บันทึกรูปพร้อมเพย์เรียบร้อย\n(ย่อแล้ว ~' + kb + ' KB · เก็บ base64 ในฐานข้อมูล)');
       }
     }).catch(err => {
       console.error(err);
