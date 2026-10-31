@@ -331,56 +331,14 @@ function formatStorageError(e) {
  * @returns {Promise<string>} download URL หรือ dataUrl เดิมถ้าอัปโหลดไม่ได้
  */
 async function uploadImageToFirebase(path, dataUrl) {
-  if (!dataUrl || !dataUrl.startsWith('data:')) return dataUrl || '';
-
-  if (!firebaseReady) {
-    console.log('[Upload] Firebase ยังไม่พร้อม');
-    return dataUrl;
-  }
-  if (!storageRef) {
-    console.warn('[Upload] ไม่มี Storage ref');
-    alert('ยังเชื่อม Firebase Storage ไม่ได้\n\n1) เปิด Storage ใน Firebase Console\n2) ตั้ง Rules ให้ read/write ได้\n3) ตรวจว่าโหลด firebase-storage-compat.js แล้ว');
-    return dataUrl;
-  }
-
-  try {
-    const ref = storageRef.child(path);
-    let snapshot;
-
-    // วิธีที่ 1: putString กับ data_url (เหมาะกับรูปจาก canvas/FileReader)
-    try {
-      snapshot = await ref.putString(dataUrl, 'data_url', {
-        cacheControl: 'public,max-age=31536000'
-      });
-    } catch (e1) {
-      console.warn('[Upload] putString ล้มเหลว ลอง put(blob)', e1);
-      // วิธีที่ 2: แปลงเป็น Blob แล้ว put
-      const blob = dataUrlToBlob(dataUrl);
-      snapshot = await ref.put(blob, {
-        contentType: blob.type || 'image/jpeg',
-        cacheControl: 'public,max-age=31536000'
-      });
-    }
-
-    const url = await snapshot.ref.getDownloadURL();
-    console.log('[Upload] สำเร็จ:', path, url.substring(0, 80) + '...');
-    return url;
-  } catch (e) {
-    console.error('[Upload] ล้มเหลว:', path, e);
-    alert('อัปโหลดรูปขึ้น Firebase ไม่สำเร็จ\nจะเก็บในเครื่องชั่วคราว\n\n' + formatStorageError(e));
-    return dataUrl;
-  }
+  // ปิด Firebase Storage — คืน base64 เดิมให้เก็บในฐานข้อมูล
+  console.log('[Upload] ข้าม Firebase Storage');
+  return dataUrl || '';
 }
 
-/** ถ้าเป็น data URL ให้ upload แล้วคืน URL, ถ้าเป็น http อยู่แล้วคืนเดิม */
 async function ensureRemoteImageUrl(dataUrlOrUrl, storagePath) {
+  // ไม่อัป Storage — เก็บ data URL / URL เดิมใน DB
   if (!dataUrlOrUrl) return '';
-  if (dataUrlOrUrl.startsWith('http://') || dataUrlOrUrl.startsWith('https://')) {
-    return dataUrlOrUrl;
-  }
-  if (dataUrlOrUrl.startsWith('data:')) {
-    return await uploadImageToFirebase(storagePath, dataUrlOrUrl);
-  }
   return dataUrlOrUrl;
 }
 
@@ -795,7 +753,7 @@ function addToCart(productId) {
   if (preview) {
     const icon = getIcon(product.category);
     const imgHtml = product.image
-      ? `<img src="${product.image}" style="width:100%;height:100%;object-fit:contain;border-radius:12px;" onerror="this.parentElement.textContent='${icon}'">`
+      ? `<img src="${product.image}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;" onerror="this.parentElement.textContent='${icon}'">`
       : icon;
     preview.innerHTML = `
       <div class="np-icon">${imgHtml}</div>
@@ -1872,10 +1830,7 @@ async function savePromptPayImage(dataUrl) {
 
   // อัปโหลดขึ้น Firebase Storage ถ้าเป็น data URL
   if (finalUrl && finalUrl.startsWith('data:') && firebaseReady) {
-    finalUrl = await uploadImageToFirebase(
-      'settings/promptpay_' + Date.now() + '.jpg',
-      finalUrl
-    );
+    if (finalUrl.length > 250000) finalUrl = await compressImageIfNeeded(finalUrl, 360, 0.65);
   }
 
   // บันทึก URL ลง Firestore
@@ -2226,27 +2181,44 @@ function handleImageFileSelect(e) {
 }
 
 function compressImageIfNeeded(dataUrl, maxWidth, quality) {
+  maxWidth = maxWidth || 480;
+  quality = quality == null ? 0.7 : quality;
   return new Promise(resolve => {
-    // ถ้าเล็กอยู่แล้ว ไม่ต้องย่อ
-    if (dataUrl.length < 200000) {
-      resolve(dataUrl);
+    if (!dataUrl || !String(dataUrl).startsWith('data:')) {
+      resolve(dataUrl || '');
       return;
     }
     const img = new Image();
     img.onload = () => {
-      let w = img.width;
-      let h = img.height;
-      if (w > maxWidth) {
-        h = Math.round(h * (maxWidth / w));
-        w = maxWidth;
-      }
+      let w = img.width, h = img.height;
+      if (w > maxWidth) { h = Math.round(h * (maxWidth / w)); w = maxWidth; }
+      const maxHeight = Math.round(maxWidth * 1.25);
+      if (h > maxHeight) { w = Math.round(w * (maxHeight / h)); h = maxHeight; }
       const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
+      canvas.width = Math.max(1, w);
+      canvas.height = Math.max(1, h);
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, w, h);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       try {
-        const compressed = canvas.toDataURL('image/jpeg', quality);
+        let compressed = canvas.toDataURL('image/jpeg', quality);
+        let q = quality;
+        while (compressed.length > 180000 && q > 0.4) {
+          q = Math.max(0.4, q - 0.1);
+          compressed = canvas.toDataURL('image/jpeg', q);
+        }
+        if (compressed.length > 180000 && canvas.width > 240) {
+          const c2 = document.createElement('canvas');
+          const scale = 240 / canvas.width;
+          c2.width = 240;
+          c2.height = Math.max(1, Math.round(canvas.height * scale));
+          const ctx2 = c2.getContext('2d');
+          ctx2.fillStyle = '#FFFFFF';
+          ctx2.fillRect(0, 0, c2.width, c2.height);
+          ctx2.drawImage(canvas, 0, 0, c2.width, c2.height);
+          compressed = c2.toDataURL('image/jpeg', 0.65);
+        }
         resolve(compressed);
       } catch (err) {
         resolve(dataUrl);
@@ -2256,7 +2228,6 @@ function compressImageIfNeeded(dataUrl, maxWidth, quality) {
     img.src = dataUrl;
   });
 }
-
 function handleImageUrlInput() {
   const url = document.getElementById('product-image-url')?.value.trim() || '';
   if (url) {
@@ -2365,9 +2336,9 @@ async function saveProduct(e) {
     // สร้าง id ก่อน ถ้าเป็นสินค้าใหม่ (เพื่อใช้ path อัปโหลด)
     const productId = id || generateId('p');
 
-    // อัปโหลดรูปขึ้น Firebase ถ้าเป็น data URL
-    if (image && image.startsWith('data:')) {
-      image = await ensureRemoteImageUrl(image, `products/${productId}_${Date.now()}.jpg`);
+    // เก็บ base64 ในฐานข้อมูลเท่านั้น (ไม่ใช้ Firebase Storage)
+    if (image && image.startsWith('data:') && image.length > 250000) {
+      image = await compressImageIfNeeded(image, 400, 0.65);
     }
 
     let products = getProducts();
@@ -2395,8 +2366,8 @@ async function saveProduct(e) {
     renderProducts();
 
     const msg = id ? 'แก้ไขสินค้าเรียบร้อย' : 'เพิ่มสินค้าเรียบร้อย';
-    alert(firebaseReady && image && image.startsWith('http')
-      ? msg + ' (รูปอัปขึ้น Firebase แล้ว)'
+    alert(image && image.startsWith('data:')
+      ? msg + ' (เก็บรูป base64 ในฐานข้อมูลแล้ว)'
       : msg);
   } catch (err) {
     console.error(err);
