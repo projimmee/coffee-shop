@@ -47,6 +47,7 @@
     <!-- Tabs -->
     <div class="tabs">
       <button class="tab-btn active" data-tab="orders">📋 ออเดอร์</button>
+      <button class="tab-btn" data-tab="revenue">💰 รายได้</button>
       <button class="tab-btn" data-tab="products">📦 จัดการสินค้า</button>
       <button class="tab-btn" data-tab="settings">⚙️ ตั้งค่า</button>
     </div>
@@ -63,11 +64,10 @@
           <span id="firebase-status-badge" class="firebase-status-badge is-off" title="สถานะการเชื่อมต่อ">...</span>
         </div>
         <div class="order-filters">
-          <button class="status-filter active" data-status="all">ทั้งหมด</button>
+          <button class="status-filter active" data-status="active">กำลังดำเนินการ</button>
           <button class="status-filter" data-status="pending">รอทำ</button>
           <button class="status-filter" data-status="preparing">กำลังทำ</button>
           <button class="status-filter" data-status="shipping">กำลังจัดส่ง</button>
-          <button class="status-filter" data-status="completed">สำเร็จ</button>
           <button class="status-filter" data-status="cancelled">ยกเลิก</button>
         </div>
       </div>
@@ -84,17 +84,39 @@
           <div class="stat-num" id="stat-shipping">0</div>
           <div class="stat-label">กำลังจัดส่ง</div>
         </div>
-        <div class="stat-card stat-completed">
-          <div class="stat-num" id="stat-completed">0</div>
-          <div class="stat-label">สำเร็จ</div>
-        </div>
         <div class="stat-card stat-total">
           <div class="stat-num" id="stat-total">0</div>
-          <div class="stat-label">ทั้งหมด</div>
+          <div class="stat-label">กำลังทำทั้งหมด</div>
         </div>
       </div>
       <div id="orders-list" class="orders-list">
         <!-- Orders rendered here -->
+      </div>
+    </section>
+
+    <!-- Revenue Tab -->
+    <section id="tab-revenue" class="tab-content">
+      <div class="section-header">
+        <h2>💰 รายได้</h2>
+        <button type="button" id="reset-revenue-btn" class="btn btn-danger btn-sm">🗑️ รีเซ็ตรายได้</button>
+      </div>
+      <div class="revenue-summary" id="revenue-summary">
+        <div class="revenue-card revenue-total">
+          <div class="revenue-card-label">ยอดรายได้รวม</div>
+          <div class="revenue-card-value" id="revenue-total-amount">0 ฿</div>
+        </div>
+        <div class="revenue-card">
+          <div class="revenue-card-label">จำนวนออเดอร์</div>
+          <div class="revenue-card-value" id="revenue-order-count">0</div>
+        </div>
+        <div class="revenue-card">
+          <div class="revenue-card-label">ค่าเฉลี่ย/ออเดอร์</div>
+          <div class="revenue-card-value" id="revenue-avg">0 ฿</div>
+        </div>
+      </div>
+      <p class="revenue-note" id="revenue-note">ออเดอร์ที่กด «เสร็จแล้ว» จะถูกย้ายมาที่นี่</p>
+      <div id="revenue-list" class="orders-list">
+        <!-- Completed orders for revenue -->
       </div>
     </section>
 

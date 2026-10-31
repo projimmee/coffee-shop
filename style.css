@@ -2188,3 +2188,50 @@ body {
     font-size: 0.84rem;
   }
 }
+
+/* ===== Revenue tab ===== */
+.revenue-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+}
+.revenue-card {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1rem 1.1rem;
+  text-align: center;
+}
+.revenue-card.revenue-total {
+  background: linear-gradient(135deg, #E8F5E9 0%, #F1F8E9 100%);
+  border-color: #C8E6C9;
+}
+.revenue-card-label {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+.revenue-card-value {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--primary);
+}
+.revenue-card.revenue-total .revenue-card-value {
+  color: #1B5E20;
+  font-size: 1.55rem;
+}
+.revenue-note {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  margin: 0 0 1rem;
+}
+.revenue-order-card {
+  border-left: 4px solid #2E7D32;
+}
+@media (max-width: 640px) {
+  .revenue-summary {
+    grid-template-columns: 1fr;
+  }
+}

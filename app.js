@@ -1310,6 +1310,7 @@ function showAdminDashboard() {
   loadPromptPayFromFirebase();
   loadShopStatusFromFirebase();
   subscribeShopStatus();
+  loadRevenueClearedAt().then(() => renderRevenue());
 }
 
 function setupTabs() {
@@ -1324,29 +1325,85 @@ function setupTabs() {
         updatePromptPayPreview();
         updateAdminShopToggleUI();
       }
+      if (btn.dataset.tab === 'revenue') {
+        renderRevenue();
+      }
     });
   });
 }
 
 // ===== Orders (Admin) =====
-let currentOrderStatus = 'all';
+let currentOrderStatus = 'active';
 
 // Track previous order IDs for new-order highlight
 let previousOrderIds = new Set();
+
+// จุดตัดรายได้หลังรีเซ็ต (ISO string) — ออเดอร์ completed หลังเวลานี้ถึงนับเป็นรายได้
+let revenueClearedAt = null;
+
+function getRevenueClearedAt() {
+  if (revenueClearedAt) return revenueClearedAt;
+  try {
+    revenueClearedAt = localStorage.getItem('coffee_revenue_cleared_at') || null;
+  } catch (e) {
+    revenueClearedAt = null;
+  }
+  return revenueClearedAt;
+}
+
+function setRevenueClearedAt(iso) {
+  revenueClearedAt = iso;
+  try {
+    if (iso) localStorage.setItem('coffee_revenue_cleared_at', iso);
+    else localStorage.removeItem('coffee_revenue_cleared_at');
+  } catch (e) { /* ignore */ }
+  if (firebaseReady && db) {
+    db.collection('settings').doc('revenue').set({
+      clearedAt: iso || null,
+      updatedAt: new Date().toISOString()
+    }, { merge: true }).catch(err => console.warn('save revenue clearedAt:', err));
+  }
+}
+
+async function loadRevenueClearedAt() {
+  if (firebaseReady && db) {
+    try {
+      const doc = await db.collection('settings').doc('revenue').get();
+      if (doc.exists && doc.data().clearedAt) {
+        setRevenueClearedAt(doc.data().clearedAt);
+        return;
+      }
+    } catch (e) {
+      console.warn('loadRevenueClearedAt:', e);
+    }
+  }
+  getRevenueClearedAt();
+}
+
+function getRevenueOrders() {
+  const cleared = getRevenueClearedAt();
+  return getOrders()
+    .filter(o => o.status === 'completed')
+    .filter(o => {
+      if (!cleared) return true;
+      // นับเฉพาะที่เสร็จหลังรีเซ็ต — ใช้ completedAt ถ้ามี ไม่มีใช้ createdAt
+      const t = o.completedAt || o.createdAt;
+      return t && new Date(t) > new Date(cleared);
+    })
+    .sort((a, b) => new Date(b.completedAt || b.createdAt) - new Date(a.completedAt || a.createdAt));
+}
 
 function updateOrderStats(allOrders) {
   const pending = allOrders.filter(o => o.status === 'pending').length;
   const preparing = allOrders.filter(o => o.status === 'preparing').length;
   const shipping = allOrders.filter(o => o.status === 'shipping').length;
-  const completed = allOrders.filter(o => o.status === 'completed').length;
-  const total = allOrders.length;
+  const activeTotal = pending + preparing + shipping;
 
   const el = (id) => document.getElementById(id);
   if (el('stat-pending')) el('stat-pending').textContent = pending;
   if (el('stat-preparing')) el('stat-preparing').textContent = preparing;
   if (el('stat-shipping')) el('stat-shipping').textContent = shipping;
-  if (el('stat-completed')) el('stat-completed').textContent = completed;
-  if (el('stat-total')) el('stat-total').textContent = total;
+  if (el('stat-total')) el('stat-total').textContent = activeTotal;
 }
 
 const STATUS_LABELS = {
@@ -1372,10 +1429,22 @@ function renderOrders() {
   const allOrders = getOrders();
   updateOrderStats(allOrders);
   updateLastSync();
+  // อัปเดตรายได้คู่กัน (ถ้ามีแท็บ)
+  if (document.getElementById('revenue-list')) {
+    renderRevenue();
+  }
 
   let orders = allOrders;
-  if (currentOrderStatus !== 'all') {
+  if (currentOrderStatus === 'active') {
+    // บอร์ดสด: ไม่โชว์ออเดอร์ที่เสร็จแล้ว (ไปอยู่เมนูรายได้)
+    orders = orders.filter(o =>
+      o.status === 'pending' || o.status === 'preparing' || o.status === 'shipping'
+    );
+  } else if (currentOrderStatus !== 'all') {
     orders = orders.filter(o => o.status === currentOrderStatus);
+  } else {
+    // กัน completed ออกจากบอร์ดสด
+    orders = orders.filter(o => o.status !== 'completed');
   }
 
   // Detect new orders for highlight + optional sound
@@ -1638,15 +1707,23 @@ function closeOrderDetail() {
 }
 
 function updateOrderStatus(orderId, newStatus) {
-  updateOrderInFirebase(orderId, { status: newStatus }).then(() => {
+  const patch = { status: newStatus };
+  if (newStatus === 'completed') {
+    patch.completedAt = new Date().toISOString();
+  }
+  updateOrderInFirebase(orderId, patch).then(() => {
     // อัปเดต cache ทันที
     const orders = getOrders();
     const order = orders.find(o => o.id === orderId);
-    if (order) order.status = newStatus;
+    if (order) Object.assign(order, patch);
     renderOrders();
+    if (newStatus === 'completed') {
+      goToRevenueTab();
+    }
     // ถ้า modal รายละเอียดเปิดอยู่ ให้อัปเดต
     if (document.getElementById('order-detail-modal')?.classList.contains('show')) {
-      viewOrderDetail(orderId);
+      if (newStatus === 'completed') closeOrderDetail();
+      else viewOrderDetail(orderId);
     }
   });
 }
@@ -1663,14 +1740,97 @@ function startOrderAndReceipt(orderId) {
 }
 
 function completeOrderWithReceipt(orderId) {
-  updateOrderInFirebase(orderId, { status: 'completed' }).then(() => {
+  const completedAt = new Date().toISOString();
+  updateOrderInFirebase(orderId, { status: 'completed', completedAt }).then(() => {
     const orders = getOrders();
     const order = orders.find(o => o.id === orderId);
-    if (order) order.status = 'completed';
+    if (order) {
+      order.status = 'completed';
+      order.completedAt = completedAt;
+    }
     renderOrders();
     closeOrderDetail();
     showReceipt(orderId);
+    // เด้งไปเมนูรายได้
+    goToRevenueTab();
   });
+}
+
+function goToRevenueTab() {
+  const btn = document.querySelector('.tab-btn[data-tab="revenue"]');
+  if (btn) btn.click();
+  else renderRevenue();
+}
+
+function renderRevenue() {
+  const list = document.getElementById('revenue-list');
+  if (!list) return;
+
+  const orders = getRevenueOrders();
+  const total = orders.reduce((s, o) => s + (Number(o.total) || 0), 0);
+  const count = orders.length;
+  const avg = count ? total / count : 0;
+
+  const totalEl = document.getElementById('revenue-total-amount');
+  const countEl = document.getElementById('revenue-order-count');
+  const avgEl = document.getElementById('revenue-avg');
+  const noteEl = document.getElementById('revenue-note');
+
+  if (totalEl) totalEl.textContent = formatPrice(total) + ' ฿';
+  if (countEl) countEl.textContent = String(count);
+  if (avgEl) avgEl.textContent = formatPrice(Math.round(avg)) + ' ฿';
+
+  const cleared = getRevenueClearedAt();
+  if (noteEl) {
+    noteEl.textContent = cleared
+      ? `นับจากหลังรีเซ็ตล่าสุด (${formatDate(cleared)}) · ออเดอร์ที่กดเสร็จแล้วจะมาอยู่ที่นี่`
+      : 'ออเดอร์ที่กด «เสร็จแล้ว» จะถูกย้ายมาที่นี่';
+  }
+
+  if (orders.length === 0) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">💰</div>
+        <p>ยังไม่มีรายได้ในรอบนี้<br><small>เมื่อกดเสร็จออเดอร์ จะปรากฏที่นี่</small></p>
+      </div>`;
+    return;
+  }
+
+  list.innerHTML = orders.map(o => {
+    const itemSummary = (o.items || []).map(i => `${i.name}×${i.qty}`).join(', ');
+    const when = o.completedAt || o.createdAt;
+    return `
+      <div class="order-card revenue-order-card" data-order-id="${o.id}">
+        <div class="order-info">
+          <h3>#${o.id}</h3>
+          <div class="order-meta">
+            <span>👤 ${o.customerName || '-'}</span>
+            <span>📞 ${o.customerPhone || '-'}</span>
+            <span class="delivery-type-tag ${o.deliveryType === 'delivery' ? 'is-delivery' : 'is-pickup'}">${o.deliveryType === 'delivery' ? '🛵 จัดส่ง' : '🏪 รับที่ร้าน'}</span>
+            <span>🕒 ${formatDate(when)}</span>
+          </div>
+          <div style="margin-top:0.35rem; font-size:0.88rem; color:var(--text-muted);">${itemSummary}</div>
+          <div style="margin-top:0.45rem;">
+            <span class="status-badge status-completed">สำเร็จ</span>
+            <strong style="margin-left:0.8rem; color:var(--primary); font-size:1.1rem;">+${formatPrice(o.total)} ฿</strong>
+          </div>
+        </div>
+        <div class="order-actions">
+          <button class="btn btn-outline btn-sm" onclick="showReceipt('${o.id}')">🧾 ใบเสร็จ</button>
+          <button class="btn btn-outline btn-sm" onclick="viewOrderDetail('${o.id}')">รายละเอียด</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function resetRevenue() {
+  if (!confirm('รีเซ็ตรายได้ทั้งหมดในรอบนี้?\n\nยอดรวมจะเริ่มนับใหม่จาก 0\n(ออเดอร์เก่าจะไม่ถูกลบ แต่ไม่นับในรายได้อีก)')) {
+    return;
+  }
+  const now = new Date().toISOString();
+  setRevenueClearedAt(now);
+  renderRevenue();
+  alert('รีเซ็ตรายได้เรียบร้อยแล้ว\nยอดเริ่มนับใหม่จากออเดอร์ที่เสร็จหลังจากนี้');
 }
 
 function getPromptPayImage() {
@@ -2702,6 +2862,7 @@ function initAdmin() {
   });
   document.getElementById('logout-btn')?.addEventListener('click', logoutAdmin);
   document.getElementById('reset-all-btn')?.addEventListener('click', resetAllData);
+  document.getElementById('reset-revenue-btn')?.addEventListener('click', resetRevenue);
 
   setupTabs();
   setupOrderFilters();
