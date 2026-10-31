@@ -1900,8 +1900,7 @@ async function savePromptPayImage(dataUrl) {
   } catch (e) {
     console.error('savePromptPayImage localStorage:', e);
     if (finalUrl && finalUrl.startsWith('data:')) {
-      alert('พื้นที่จัดเก็บในเครื่องเต็ม\nถ้าเปิด Firebase ไว้ รูปจะถูกบันทึกบนเซิร์ฟเวอร์แล้ว');
-      // ยังถือว่าสำเร็จถ้า Firestore รับได้
+      alert('พื้นที่จัดเก็บในเครื่องเต็ม\nถ้าเปิด Firebase ไว้ รูปอาจถูกบันทึกบนเซิร์ฟเวอร์แล้ว');
       updatePromptPayPreview();
       return !!firebaseReady;
     }
@@ -1909,7 +1908,6 @@ async function savePromptPayImage(dataUrl) {
   updatePromptPayPreview();
   return true;
 }
-
 function updatePromptPayPreview() {
   const preview = document.getElementById('promptpay-preview');
   const clearBtn = document.getElementById('clear-promptpay-btn');
@@ -1938,7 +1936,6 @@ function handlePromptPayUpload(e) {
     return;
   }
 
-  // ยอมรับไฟล์ใหญ่ขึ้น แล้วค่อยย่อเป็น base64
   if (file.size > 5 * 1024 * 1024) {
     alert('ไฟล์ใหญ่เกินไป (สูงสุด 5MB)');
     input.value = '';
@@ -1947,7 +1944,6 @@ function handlePromptPayUpload(e) {
 
   const reader = new FileReader();
   reader.onload = () => {
-    // ย่อขนาดอัตโนมัติ → เก็บ base64 ในฐานข้อมูลเดิม
     compressImageIfNeeded(reader.result, 400, 0.7).then(async src => {
       let finalSrc = src;
       if (src.length > 180000) {
@@ -1977,7 +1973,6 @@ function handlePromptPayUpload(e) {
   };
   reader.readAsDataURL(file);
 }
-
 function clearPromptPay() {
   if (!confirm('ลบรูปพร้อมเพย์ใช่หรือไม่?')) return;
   savePromptPayImage('');
@@ -2195,21 +2190,20 @@ function handleImageFileSelect(e) {
     return;
   }
 
-  // จำกัดขนาด ~1.5MB (base64 จะใหญ่ขึ้นอีก ~33%)
-  if (file.size > 1.5 * 1024 * 1024) {
-    alert('ไฟล์ใหญ่เกินไป (แนะนำไม่เกิน 1.5MB)\nลองย่อรูปก่อนอัปโหลด');
+  if (file.size > 5 * 1024 * 1024) {
+    alert('ไฟล์ใหญ่เกินไป (ไม่เกิน 5MB)\nลองเลือกรูปที่เล็กกว่า');
     e.target.value = '';
     return;
   }
 
   const reader = new FileReader();
   reader.onload = () => {
-    const dataUrl = reader.result;
-    // ถ้าใหญ่เกินไปหลังแปลง ลองย่อด้วย canvas
-    compressImageIfNeeded(dataUrl, 800, 0.75).then(finalSrc => {
+    // ย่อขนาดอัตโนมัติ → เก็บเป็น base64 ในฐานข้อมูล (ไม่ใช้ Firebase Storage)
+    compressImageIfNeeded(reader.result, 480, 0.7).then(finalSrc => {
       setImagePreview(finalSrc);
       const urlInput = document.getElementById('product-image-url');
-      if (urlInput) urlInput.value = ''; // ล้าง URL เมื่ออัปโหลดไฟล์
+      if (urlInput) urlInput.value = '';
+      console.log('[Image] base64 ~' + Math.round((finalSrc.length * 0.75) / 1024) + ' KB');
     });
   };
   reader.onerror = () => {
@@ -2218,12 +2212,13 @@ function handleImageFileSelect(e) {
   };
   reader.readAsDataURL(file);
 }
-
 function compressImageIfNeeded(dataUrl, maxWidth, quality) {
+  // ย่อรูป + แปลงเป็น JPEG base64 สำหรับเก็บในฐานข้อมูล (Firestore/localStorage)
+  maxWidth = maxWidth || 480;
+  quality = quality == null ? 0.7 : quality;
   return new Promise(resolve => {
-    // ถ้าเล็กอยู่แล้ว ไม่ต้องย่อ
-    if (dataUrl.length < 200000) {
-      resolve(dataUrl);
+    if (!dataUrl || !String(dataUrl).startsWith('data:')) {
+      resolve(dataUrl || '');
       return;
     }
     const img = new Image();
@@ -2234,15 +2229,39 @@ function compressImageIfNeeded(dataUrl, maxWidth, quality) {
         h = Math.round(h * (maxWidth / w));
         w = maxWidth;
       }
+      const maxHeight = Math.round(maxWidth * 1.25);
+      if (h > maxHeight) {
+        w = Math.round(w * (maxHeight / h));
+        h = maxHeight;
+      }
       const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
+      canvas.width = Math.max(1, w);
+      canvas.height = Math.max(1, h);
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, w, h);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       try {
-        const compressed = canvas.toDataURL('image/jpeg', quality);
+        let compressed = canvas.toDataURL('image/jpeg', quality);
+        let q = quality;
+        while (compressed.length > 180000 && q > 0.4) {
+          q = Math.max(0.4, q - 0.1);
+          compressed = canvas.toDataURL('image/jpeg', q);
+        }
+        if (compressed.length > 180000 && canvas.width > 240) {
+          const scale = 240 / canvas.width;
+          const c2 = document.createElement('canvas');
+          c2.width = 240;
+          c2.height = Math.max(1, Math.round(canvas.height * scale));
+          const ctx2 = c2.getContext('2d');
+          ctx2.fillStyle = '#FFFFFF';
+          ctx2.fillRect(0, 0, c2.width, c2.height);
+          ctx2.drawImage(canvas, 0, 0, c2.width, c2.height);
+          compressed = c2.toDataURL('image/jpeg', 0.65);
+        }
         resolve(compressed);
       } catch (err) {
+        console.warn('compressImageIfNeeded failed:', err);
         resolve(dataUrl);
       }
     };
@@ -2250,7 +2269,6 @@ function compressImageIfNeeded(dataUrl, maxWidth, quality) {
     img.src = dataUrl;
   });
 }
-
 function handleImageUrlInput() {
   const url = document.getElementById('product-image-url')?.value.trim() || '';
   if (url) {
@@ -2356,12 +2374,12 @@ async function saveProduct(e) {
   }
 
   try {
-    // สร้าง id ก่อน ถ้าเป็นสินค้าใหม่ (เพื่อใช้ path อัปโหลด)
+    // สร้าง id ก่อน ถ้าเป็นสินค้าใหม่
     const productId = id || generateId('p');
 
-    // อัปโหลดรูปขึ้น Firebase ถ้าเป็น data URL
-    if (image && image.startsWith('data:')) {
-      image = await ensureRemoteImageUrl(image, `products/${productId}_${Date.now()}.jpg`);
+    // เก็บรูปเป็น base64 ในฐานข้อมูลเดิมเท่านั้น — ไม่ใช้ Firebase Storage
+    if (image && image.startsWith('data:') && image.length > 250000) {
+      image = await compressImageIfNeeded(image, 400, 0.65);
     }
 
     let products = getProducts();
@@ -2389,8 +2407,8 @@ async function saveProduct(e) {
     renderProducts();
 
     const msg = id ? 'แก้ไขสินค้าเรียบร้อย' : 'เพิ่มสินค้าเรียบร้อย';
-    alert(firebaseReady && image && image.startsWith('http')
-      ? msg + ' (รูปอัปขึ้น Firebase แล้ว)'
+    alert(image && image.startsWith('data:')
+      ? msg + ' (เก็บรูป base64 ในฐานข้อมูลแล้ว)'
       : msg);
   } catch (err) {
     console.error(err);
