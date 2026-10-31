@@ -19,7 +19,7 @@
       <a href="#" id="cart-btn" class="cart-link">
         🛒 ตะกร้า <span id="cart-count" class="badge">0</span>
       </a>
-      <a href="#" id="track-btn" class="track-link">📦 ติดตามออเดอร์</a>
+      <a href="#" id="track-btn" class="track-link" onclick="event.preventDefault(); openTrack(); return false;">📦 ติดตามออเดอร์</a>
     </div>
   </nav>
 
@@ -192,7 +192,7 @@
     <div class="modal-content">
       <div class="modal-header">
         <h2>📦 ติดตามสถานะออเดอร์</h2>
-        <button class="close-btn" id="close-track">&times;</button>
+        <button type="button" class="close-btn" id="close-track" onclick="closeTrack()">&times;</button>
       </div>
       <div class="track-body">
         <div class="form-group">
@@ -200,7 +200,7 @@
           <input type="tel" id="track-phone" placeholder="เช่น 08x-xxx-xxxx" />
           <small style="display:block;margin-top:0.35rem;color:var(--text-muted);">ใส่เบอร์เดียวกับตอนสั่งซื้อ ระบบจะแสดงออเดอร์ทั้งหมดของเบอร์นี้</small>
         </div>
-        <button id="track-search-btn" class="btn btn-primary btn-block">ค้นหาออเดอร์</button>
+        <button type="button" id="track-search-btn" class="btn btn-primary btn-block" onclick="searchOrder()">ค้นหาออเดอร์</button>
         <div id="track-result" class="track-result" style="display:none;">
           <!-- result will show here -->
         </div>

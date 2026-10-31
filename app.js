@@ -381,9 +381,21 @@ async function loadProductsFromFirebase() {
 
 // --- Orders ---
 function getOrders() {
-  if (ordersCache && ordersCache.length >= 0 && firebaseReady) return ordersCache;
-  const data = localStorage.getItem(STORAGE_KEYS.orders);
-  return data ? JSON.parse(data) : [];
+  // ถ้ามี cache จาก Firebase/local ใช้ก่อน ถ้ายังว่าง ลองอ่าน localStorage
+  if (Array.isArray(ordersCache) && ordersCache.length > 0) {
+    return ordersCache;
+  }
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.orders);
+    const parsed = data ? JSON.parse(data) : [];
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      ordersCache = parsed;
+      return parsed;
+    }
+  } catch (e) {
+    console.warn('getOrders localStorage error:', e);
+  }
+  return Array.isArray(ordersCache) ? ordersCache : [];
 }
 
 async function saveOrders(orders) {
@@ -393,21 +405,34 @@ async function saveOrders(orders) {
 }
 
 async function addOrderToFirebase(order) {
-  if (!firebaseReady || !db) {
-    const orders = getOrders();
-    orders.unshift(order);
+  // อัปเดต cache + localStorage ทันที ก่อนยิง Firebase
+  // เพื่อให้หน้าติดตามเห็นออเดอร์ใหม่ทันที
+  let orders = [];
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.orders);
+    orders = data ? JSON.parse(data) : [];
+    if (!Array.isArray(orders)) orders = [];
+  } catch (e) {
+    orders = Array.isArray(ordersCache) ? ordersCache.slice() : [];
+  }
+  // กันซ้ำ
+  orders = orders.filter(o => o && o.id !== order.id);
+  orders.unshift(order);
+  ordersCache = orders;
+  try {
     localStorage.setItem(STORAGE_KEYS.orders, JSON.stringify(orders));
-    ordersCache = orders;
+  } catch (e) {
+    console.warn('save order localStorage failed:', e);
+  }
+
+  if (!firebaseReady || !db) {
     return;
   }
   try {
     await db.collection('orders').doc(order.id).set(order);
   } catch (e) {
     console.error('addOrderToFirebase:', e);
-    // fallback local
-    const orders = getOrders();
-    orders.unshift(order);
-    localStorage.setItem(STORAGE_KEYS.orders, JSON.stringify(orders));
+    // เก็บ local ไว้แล้ว ไม่ต้องทำซ้ำ
   }
 }
 
@@ -2273,11 +2298,24 @@ const TRACK_STATUS_MAP = {
   }
 };
 
-function openTrack() {
+function openTrack(e) {
+  if (e) {
+    try { e.preventDefault(); } catch (_) {}
+  }
   // ไม่ล้างเบอร์ถ้ามีค่าอยู่แล้ว (เช่น หลังสั่งซื้อ)
   const resultEl = document.getElementById('track-result');
   if (resultEl) resultEl.style.display = 'none';
-  document.getElementById('track-modal')?.classList.add('show');
+  const modal = document.getElementById('track-modal');
+  if (!modal) {
+    alert('ไม่พบหน้าต่างติดตามออเดอร์\nกรุณารีเฟรชหน้าเว็บแล้วลองใหม่');
+    return;
+  }
+  modal.classList.add('show');
+  // โฟกัสช่องเบอร์โทร
+  setTimeout(() => {
+    const phoneEl = document.getElementById('track-phone');
+    if (phoneEl) phoneEl.focus();
+  }, 100);
   startTrackPolling();
 }
 
@@ -2418,6 +2456,10 @@ function searchOrder() {
     </div>`;
 }
 
+// ให้เรียกจากปุ่ม HTML (onclick) ได้แน่นอน
+window.openTrack = openTrack;
+window.closeTrack = closeTrack;
+window.searchOrder = searchOrder;
 
 
 // ===== Reset ทั้งหมด (ต้องใส่รหัสผ่าน) =====
