@@ -1711,50 +1711,347 @@ body {
   padding: 0.4rem 0;
 }
 
-/* ===== Track list (หลายออเดอร์ต่อเบอร์) ===== */
-.track-list-header {
-  text-align: center;
-  margin-bottom: 0.9rem;
+/* ===== Delivery type toggle (checkout) ===== */
+.delivery-type-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
 }
 
-.track-list-summary {
-  margin-top: 0.45rem;
-  font-size: 0.92rem;
+.delivery-type-btn {
+  background: white;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 0.6rem;
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 550;
   color: var(--text-muted);
+  cursor: pointer;
+  transition: var(--transition);
+  min-height: 48px;
 }
 
-.track-list-summary strong {
+.delivery-type-btn:hover {
+  border-color: var(--primary-light);
   color: var(--primary);
 }
 
-.track-orders-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.9rem;
+.delivery-type-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+  box-shadow: 0 4px 12px rgba(93, 64, 55, 0.25);
 }
 
-.track-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
+.delivery-map-actions {
+  margin-top: 0.35rem;
 }
 
-.track-order-id {
-  font-size: 1.15rem;
+.pinned-location-info {
+  background: var(--bg-warm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 0.9rem;
+  margin-top: 0.6rem;
+}
+
+.pinned-coords {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--primary);
+  margin-bottom: 0.3rem;
+}
+
+.maps-link {
+  color: var(--primary);
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.maps-link:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 480px) {
+  .delivery-type-btn {
+    font-size: 0.88rem;
+    padding: 0.7rem 0.4rem;
+  }
+}
+
+/* ===== Order GPS box (admin) ===== */
+.order-gps-box {
+  margin-top: 0.65rem;
+  background: linear-gradient(135deg, #E8F5E9 0%, #F1F8E9 100%);
+  border: 1px solid #C8E6C9;
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+}
+
+.order-gps-box.order-gps-no-pin {
+  background: var(--bg-warm);
+  border-color: var(--border);
+}
+
+.order-gps-title {
+  font-size: 0.82rem;
   font-weight: 700;
+  color: #2E7D32;
+  margin-bottom: 0.25rem;
+}
+
+.order-gps-no-pin .order-gps-title {
+  color: var(--text-muted);
+}
+
+.order-gps-coords {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88rem;
+  font-weight: 600;
   color: var(--primary-dark);
+  margin: 0.2rem 0;
+  word-break: break-all;
 }
 
-.track-status-card.track-card-compact {
-  text-align: left;
+.order-gps-addr {
+  font-size: 0.9rem;
+  color: var(--text);
+  margin: 0.2rem 0 0.4rem;
+  line-height: 1.4;
 }
 
-.track-status-card.track-card-compact .track-status-desc {
-  text-align: left;
+.order-gps-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
 }
 
-.track-status-card.track-card-compact .queue-badge {
+.order-gps-actions .btn {
+  text-decoration: none;
+}
+
+.order-map-embed {
+  margin-top: 0.7rem;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.detail-gps-box {
+  margin: 0.9rem 0;
+}
+
+.delivery-type-tag {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.delivery-type-tag.is-delivery {
+  background: #E8F5E9;
+  color: #2E7D32;
+}
+
+.delivery-type-tag.is-pickup {
+  background: #FFF4E5;
+  color: #C47A00;
+}
+
+.order-pickup-loc {
+  margin-top: 0.4rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.order-actions a.btn {
+  text-decoration: none;
   display: inline-flex;
+  align-items: center;
+}
+
+/* ===== Sold out / สินค้าหมด ===== */
+.product-card.sold-out {
+  opacity: 0.85;
+  position: relative;
+}
+
+.product-card.sold-out .product-image {
+  filter: grayscale(0.35);
+}
+
+.product-card.sold-out .product-image img {
+  filter: grayscale(0.4);
+}
+
+.sold-out-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(196, 69, 54, 0.92);
+  color: white;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.28rem 0.65rem;
+  border-radius: 20px;
+  letter-spacing: 0.3px;
+  z-index: 2;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.product-image {
+  position: relative;
+}
+
+.sold-out-label {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--danger);
+  background: #FDE8E8;
+  padding: 0.12rem 0.45rem;
+  border-radius: 6px;
+  vertical-align: middle;
+  margin-left: 0.25rem;
+}
+
+.btn-sold-out {
+  background: #E8E0D8;
+  color: var(--text-muted);
+  cursor: not-allowed;
+  box-shadow: none;
+  border: none;
+}
+
+.btn-sold-out:disabled {
+  opacity: 1;
+}
+
+.btn-warning-soft {
+  background: #FFF4E5;
+  color: #C47A00;
+  border: 1.5px solid #F5D9A8;
+}
+
+.btn-warning-soft:hover {
+  background: #FFE8C2;
+  transform: translateY(-1px);
+}
+
+.btn-success-soft {
+  background: #E6F6ED;
+  color: #0D7A3F;
+  border: 1.5px solid #A8E0C0;
+}
+
+.btn-success-soft:hover {
+  background: #D4F0E0;
+  transform: translateY(-1px);
+}
+
+.admin-product-item.is-sold-out {
+  border-color: #F5C6C0;
+  background: #FFFCFA;
+}
+
+.admin-product-item .thumb {
+  position: relative;
+}
+
+.admin-sold-out-mark {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  background: var(--danger);
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.1rem 0.35rem;
+  border-radius: 6px;
+}
+
+.admin-product-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+@media (max-width: 768px) {
+  .admin-product-actions {
+    width: 100%;
+  }
+  .admin-product-actions .btn {
+    flex: 1;
+    justify-content: center;
+  }
+}
+
+/* ===== Shop closed banner ===== */
+.shop-closed-banner {
+  display: none;
+  background: linear-gradient(135deg, #C44536 0%, #A83A2E 100%);
+  color: white;
+  padding: 0.9rem 1.25rem;
+  box-shadow: 0 4px 16px rgba(196, 69, 54, 0.25);
+}
+
+.shop-closed-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.shop-closed-icon {
+  font-size: 1.8rem;
+  flex-shrink: 0;
+}
+
+.shop-closed-inner strong {
+  display: block;
+  font-size: 1.1rem;
+  margin-bottom: 0.15rem;
+}
+
+.shop-closed-inner p {
+  margin: 0;
+  font-size: 0.9rem;
+  opacity: 0.92;
+}
+
+.shop-status {
+  font-weight: 700;
+  font-size: 1.05rem;
+  margin-bottom: 0.9rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: 10px;
+  display: inline-block;
+}
+
+.shop-status.open {
+  background: #E6F6ED;
+  color: #0D7A3F;
+}
+
+.shop-status.closed {
+  background: #FDE8E8;
+  color: #C44536;
+}
+
+@media (max-width: 480px) {
+  .shop-closed-inner {
+    gap: 0.6rem;
+  }
+  .shop-closed-inner strong {
+    font-size: 1rem;
+  }
+  .shop-closed-inner p {
+    font-size: 0.84rem;
+  }
 }
