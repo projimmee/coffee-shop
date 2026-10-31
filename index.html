@@ -15,6 +15,7 @@
       <span class="brand-name">Coffee Shop</span>
     </div>
     <div class="nav-links">
+      <span id="firebase-status-badge" class="firebase-status-badge is-off" title="สถานะการเชื่อมต่อ">...</span>
       <a href="index.html" class="active">หน้าหลัก</a>
       <a href="#" id="cart-btn" class="cart-link">
         🛒 ตะกร้า <span id="cart-count" class="badge">0</span>
@@ -91,25 +92,9 @@
           </div>
           <input type="hidden" id="delivery-type" value="pickup" />
         </div>
-        <div class="form-group" id="location-group">
-          <label id="location-label">จุดรับที่ร้าน</label>
-          <input type="text" id="customer-location" placeholder="เช่น โต๊ะ 5, หน้าร้าน, เคาน์เตอร์" />
-          <div id="delivery-map-actions" class="delivery-map-actions" style="display:none;">
-            <button type="button" id="pin-location-btn" class="btn btn-outline btn-block" style="margin-top:0.6rem;">
-              📍 ปักหมุดที่อยู่บนแผนที่ (GPS)
-            </button>
-            <div id="pinned-location-info" class="pinned-location-info" style="display:none;">
-              <div class="pinned-coords" id="pinned-coords-text"></div>
-              <a id="open-maps-link" href="#" target="_blank" rel="noopener" class="maps-link">เปิดดูใน Google Maps ↗</a>
-              <button type="button" id="clear-pin-btn" class="btn btn-outline btn-sm" style="margin-top:0.4rem;">ล้างหมุด</button>
-            </div>
-            <input type="hidden" id="delivery-lat" value="" />
-            <input type="hidden" id="delivery-lng" value="" />
-            <small id="location-hint" style="display:block;margin-top:0.45rem;">กดปักหมุดเพื่อใช้ตำแหน่งปัจจุบันจาก GPS หรือเปิด Google Maps แล้วกลับมากรอกรายละเอียดที่อยู่</small>
-          </div>
-        </div>
+        <!-- รับที่ร้าน: เวลารับ -->
         <div class="form-group" id="pickup-time-group">
-          <label>เวลารับที่ร้าน *</label>
+          <label>เวลารับสินค้า *</label>
           <div class="pickup-time-row">
             <input type="time" id="pickup-time" required />
             <div class="pickup-quick-times">
@@ -119,7 +104,40 @@
               <button type="button" class="quick-tag pickup-quick" data-mins="45">+45 นาที</button>
             </div>
           </div>
-          <small style="display:block;margin-top:0.35rem;color:var(--text-muted);">ระบุเวลาที่ต้องการมารับสินค้า</small>
+          <small style="display:block;margin-top:0.35rem;color:var(--text-muted);">ระบุเวลาที่ต้องการมารับที่ร้าน</small>
+        </div>
+
+        <!-- จุดรับที่ร้าน (ไม่บังคับ) -->
+        <div class="form-group" id="pickup-location-group">
+          <label>จุดรับที่ร้าน (ถ้ามี)</label>
+          <input type="text" id="pickup-location" placeholder="เช่น โต๊ะ 5, หน้าร้าน, เคาน์เตอร์" />
+        </div>
+
+        <!-- บริการจัดส่ง: เลือก GPS หรือพิมพ์ที่อยู่ อย่างใดอย่างหนึ่ง -->
+        <div class="form-group" id="delivery-location-group" style="display:none;">
+          <label>ที่อยู่จัดส่ง *</label>
+          <p class="delivery-choice-hint">เลือกอย่างใดอย่างหนึ่ง</p>
+
+          <div class="delivery-option-card">
+            <div class="delivery-option-title">① ปักหมุด GPS</div>
+            <button type="button" id="pin-location-btn" class="btn btn-outline btn-block">
+              📍 ใช้ตำแหน่งปัจจุบัน (GPS)
+            </button>
+            <div id="pinned-location-info" class="pinned-location-info" style="display:none;">
+              <div class="pinned-coords" id="pinned-coords-text"></div>
+              <a id="open-maps-link" href="#" target="_blank" rel="noopener" class="maps-link">เปิดดูใน Google Maps ↗</a>
+              <button type="button" id="clear-pin-btn" class="btn btn-outline btn-sm" style="margin-top:0.4rem;">ล้างหมุด</button>
+            </div>
+            <input type="hidden" id="delivery-lat" value="" />
+            <input type="hidden" id="delivery-lng" value="" />
+          </div>
+
+          <div class="delivery-or-divider"><span>หรือ</span></div>
+
+          <div class="delivery-option-card">
+            <div class="delivery-option-title">② พิมพ์ที่อยู่</div>
+            <input type="text" id="customer-location" placeholder="บ้านเลขที่, ถนน, ตำบล, จุดสังเกต" />
+          </div>
         </div>
         <div class="form-group">
           <label>หมายเหตุ (ถ้ามี)</label>

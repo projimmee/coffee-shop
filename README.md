@@ -1,7 +1,8 @@
 # ☕ Coffee Shop — ระบบจัดการร้านกาแฟ
 
 ระบบสั่งซื้อและจัดการออเดอร์ร้านกาแฟ แบบ Pure HTML / CSS / JavaScript  
-รองรับทั้ง **localStorage** (ใช้งานทันที) และ **Firebase** (ซิงค์ข้ามเครื่องแบบ real-time)
+**เปิดใช้ Firebase อยู่แล้ว** (`USE_FIREBASE = true`) — ซิงค์ออเดอร์/สินค้าข้ามเครื่องแบบ real-time  
+สลับกลับ localStorage ได้ใน `firebase-config.js`
 
 ## ✨ คุณสมบัติ
 

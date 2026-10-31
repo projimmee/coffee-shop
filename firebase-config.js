@@ -14,4 +14,6 @@ const firebaseConfig = {
 };
 
 // เปิดใช้ Firebase (Firestore + Storage)
+// true  = ซิงค์ข้ามเครื่องแบบ real-time (ต้องสร้าง Firestore + Rules ใน Console)
+// false = เก็บเฉพาะในเบราว์เซอร์ (localStorage)
 const USE_FIREBASE = true;

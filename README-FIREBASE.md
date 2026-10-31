@@ -114,12 +114,27 @@ firebase-config.js
   id: "001",
   customerName: "สมชาย",
   customerPhone: "0812345678",
+  deliveryType: "pickup",       // pickup | delivery
+  deliveryLocation: "รับที่ร้าน",
+  deliveryLat: null,
+  deliveryLng: null,
+  pickupTime: "14:30",          // เฉพาะรับที่ร้าน
   note: "",
   items: [{ id, name, price, qty, note }],
   total: 130,
-  status: "pending",  // pending | preparing | completed | cancelled
-  createdAt: "2025-..."
+  status: "pending",  // pending | preparing | shipping | completed | cancelled
+  createdAt: "2026-..."
 }
+```
+
+### Document: `settings/orderCounter`
+```
+{ value: 5, updatedAt: "..." }  // ตัวนับหมายเลขออเดอร์ข้ามเครื่อง
+```
+
+### Document: `settings/shop`
+```
+{ closed: false }
 ```
 
 ## สลับกลับไปใช้ localStorage

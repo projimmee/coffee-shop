@@ -99,13 +99,39 @@ function generateId(prefix = 'id') {
 }
 
 // หมายเลขออเดอร์รัน 0-999 แล้ววนกลับ
-function getNextOrderNumber() {
+// โหมด local: ใช้ localStorage
+// โหมด Firebase: ใช้ตัวนับใน Firestore settings/orderCounter (atomic)
+function getNextOrderNumberLocal() {
   let counter = parseInt(localStorage.getItem('coffee_order_counter') || '0', 10);
   const num = counter;
-  counter = (counter + 1) % 1000; // 0-999
+  counter = (counter + 1) % 1000;
   localStorage.setItem('coffee_order_counter', String(counter));
-  // แสดงเป็น 3 หลัก เช่น 001, 042, 999
   return String(num).padStart(3, '0');
+}
+
+async function getNextOrderNumber() {
+  if (!firebaseReady || !db) {
+    return getNextOrderNumberLocal();
+  }
+  try {
+    const ref = db.collection('settings').doc('orderCounter');
+    const nextNum = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      let current = 0;
+      if (snap.exists) {
+        current = parseInt(snap.data().value, 10) || 0;
+      }
+      const next = (current + 1) % 1000;
+      tx.set(ref, { value: next, updatedAt: new Date().toISOString() }, { merge: true });
+      return current;
+    });
+    const id = String(nextNum).padStart(3, '0');
+    localStorage.setItem('coffee_order_counter', String((nextNum + 1) % 1000));
+    return id;
+  } catch (e) {
+    console.warn('getNextOrderNumber Firebase failed, fallback local:', e);
+    return getNextOrderNumberLocal();
+  }
 }
 
 function formatPrice(n) {
@@ -195,9 +221,42 @@ let firebaseReady = false;
 let productsCache = null;
 let ordersCache = [];
 
+function updateFirebaseStatusUI(ok, detail) {
+  const live = document.getElementById('live-indicator');
+  const sync = document.getElementById('last-sync');
+  const badge = document.getElementById('firebase-status-badge');
+  if (ok) {
+    if (live) {
+      live.innerHTML = '<span class="live-dot"></span> Firebase สด';
+      live.classList.add('is-firebase');
+      live.classList.remove('is-local');
+    }
+    if (sync && detail) sync.textContent = detail;
+    if (badge) {
+      badge.textContent = '☁ Firebase';
+      badge.className = 'firebase-status-badge is-on';
+      badge.title = 'เชื่อม Firebase แล้ว ข้อมูลซิงค์ข้ามเครื่อง';
+    }
+  } else {
+    if (live) {
+      live.innerHTML = '<span class="live-dot local"></span> โหมดเครื่องนี้';
+      live.classList.add('is-local');
+      live.classList.remove('is-firebase');
+    }
+    if (sync) sync.textContent = detail || 'ใช้ localStorage';
+    if (badge) {
+      badge.textContent = '💾 Local';
+      badge.className = 'firebase-status-badge is-off';
+      badge.title = 'ยังไม่เชื่อม Firebase — ข้อมูลอยู่บนเครื่องนี้เท่านั้น';
+    }
+  }
+}
+
 function initFirebase() {
   if (typeof firebase === 'undefined' || typeof USE_FIREBASE === 'undefined' || !USE_FIREBASE) {
     console.log('[Storage] ใช้ localStorage (ยังไม่เปิด Firebase)');
+    firebaseReady = false;
+    updateFirebaseStatusUI(false, 'ใช้ localStorage');
     return false;
   }
   try {
@@ -209,13 +268,11 @@ function initFirebase() {
     // โหลด Firebase Storage
     if (typeof firebase.storage === 'function') {
       try {
-        // ใช้ bucket จาก config ก่อน
         storageRef = firebase.storage().ref();
         console.log('[Storage] Storage bucket:', firebaseConfig.storageBucket);
       } catch (storageErr) {
         console.warn('[Storage] init default bucket ล้มเหลว ลอง appspot.com', storageErr);
         try {
-          // fallback สำหรับโปรเจกต์เก่า/ใหม่
           const altBucket = (firebaseConfig.projectId || 'coffee-shop-900ba') + '.appspot.com';
           storageRef = firebase.app().storage('gs://' + altBucket).ref();
           console.log('[Storage] ใช้ bucket สำรอง:', altBucket);
@@ -230,11 +287,13 @@ function initFirebase() {
     }
 
     firebaseReady = true;
-    console.log('[Storage] เชื่อม Firebase สำเร็จ | Storage:', !!storageRef);
+    console.log('[Storage] เชื่อม Firebase สำเร็จ | project:', firebaseConfig.projectId, '| Storage:', !!storageRef);
+    updateFirebaseStatusUI(true, 'เชื่อม Firebase แล้ว');
     return true;
   } catch (e) {
     console.error('[Storage] Firebase error:', e);
     firebaseReady = false;
+    updateFirebaseStatusUI(false, 'เชื่อม Firebase ไม่สำเร็จ');
     return false;
   }
 }
@@ -463,10 +522,14 @@ function subscribeOrders(callback) {
     .onSnapshot(snap => {
       const orders = snap.docs.map(d => d.data());
       ordersCache = orders;
-      localStorage.setItem(STORAGE_KEYS.orders, JSON.stringify(orders));
+      try {
+        localStorage.setItem(STORAGE_KEYS.orders, JSON.stringify(orders));
+      } catch (e) { /* quota */ }
+      updateFirebaseStatusUI(true, `อัปเดต ${new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`);
       callback(orders);
     }, err => {
       console.error('subscribeOrders:', err);
+      updateFirebaseStatusUI(false, 'ซิงค์ออเดอร์ล้มเหลว — ตรวจ Rules');
     });
 }
 
@@ -895,38 +958,33 @@ function setDeliveryType(type) {
     btn.classList.toggle('active', btn.dataset.type === type);
   });
 
-  const label = document.getElementById('location-label');
-  const locInput = document.getElementById('customer-location');
-  const mapActions = document.getElementById('delivery-map-actions');
   const pickupTimeGroup = document.getElementById('pickup-time-group');
   const pickupTimeInput = document.getElementById('pickup-time');
+  const pickupLocGroup = document.getElementById('pickup-location-group');
+  const deliveryLocGroup = document.getElementById('delivery-location-group');
+  const locInput = document.getElementById('customer-location');
 
   if (type === 'pickup') {
-    if (label) label.textContent = 'จุดรับที่ร้าน';
-    if (locInput) {
-      locInput.placeholder = 'เช่น โต๊ะ 5, หน้าร้าน, เคาน์เตอร์';
-      locInput.required = false;
-      if (!locInput.value.trim()) locInput.value = 'รับที่ร้าน';
-    }
-    if (mapActions) mapActions.style.display = 'none';
+    // แสดงเวลารับ + จุดรับที่ร้าน
     if (pickupTimeGroup) pickupTimeGroup.style.display = 'block';
+    if (pickupLocGroup) pickupLocGroup.style.display = 'block';
+    if (deliveryLocGroup) deliveryLocGroup.style.display = 'none';
     if (pickupTimeInput) {
       pickupTimeInput.required = true;
       if (!pickupTimeInput.value) setPickupTimeFromNow(15);
     }
+    if (locInput) locInput.required = false;
+    clearPinnedLocation();
   } else {
-    if (label) label.textContent = 'ที่อยู่จัดส่ง *';
-    if (locInput) {
-      locInput.placeholder = 'รายละเอียดเพิ่มเติม เช่น บ้านเลขที่, ชั้น, จุดสังเกต';
-      locInput.required = true;
-      if (locInput.value === 'รับที่ร้าน') locInput.value = '';
-    }
-    if (mapActions) mapActions.style.display = 'block';
+    // บริการจัดส่ง: GPS หรือพิมพ์ที่อยู่
     if (pickupTimeGroup) pickupTimeGroup.style.display = 'none';
+    if (pickupLocGroup) pickupLocGroup.style.display = 'none';
+    if (deliveryLocGroup) deliveryLocGroup.style.display = 'block';
     if (pickupTimeInput) {
       pickupTimeInput.required = false;
       pickupTimeInput.value = '';
     }
+    if (locInput) locInput.required = false; // ไม่บังคับถ้ามี GPS
   }
 }
 
@@ -1070,8 +1128,10 @@ function openCheckout() {
   // รีเซ็ตวิธีรับสินค้าเป็นรับที่ร้าน
   setDeliveryType('pickup');
   clearPinnedLocation();
+  const pickupLoc = document.getElementById('pickup-location');
+  if (pickupLoc) pickupLoc.value = '';
   const locInput = document.getElementById('customer-location');
-  if (locInput) locInput.value = 'รับที่ร้าน';
+  if (locInput) locInput.value = '';
 
   document.getElementById('checkout-modal')?.classList.add('show');
 }
@@ -1080,7 +1140,7 @@ function closeCheckout() {
   document.getElementById('checkout-modal')?.classList.remove('show');
 }
 
-function placeOrder(e) {
+async function placeOrder(e) {
   e.preventDefault();
   if (isShopClosed()) {
     alert('ร้านปิดชั่วคราว\nยังไม่สามารถสั่งซื้อได้ในขณะนี้');
@@ -1115,45 +1175,59 @@ function placeOrder(e) {
   const name = document.getElementById('customer-name').value.trim();
   const phone = document.getElementById('customer-phone').value.trim();
   const deliveryType = document.getElementById('delivery-type')?.value || 'pickup';
-  let location = document.getElementById('customer-location')?.value.trim() || '';
   const note = document.getElementById('customer-note').value.trim();
   const lat = document.getElementById('delivery-lat')?.value || '';
   const lng = document.getElementById('delivery-lng')?.value || '';
   const pickupTime = document.getElementById('pickup-time')?.value || '';
+  let location = '';
 
   if (deliveryType === 'pickup') {
-    if (!location) location = 'รับที่ร้าน';
+    // รับที่ร้าน → ต้องมีเวลารับ
     if (!pickupTime) {
-      alert('กรุณาระบุเวลารับที่ร้าน');
+      alert('กรุณาระบุเวลารับสินค้า');
+      document.getElementById('pickup-time')?.focus();
       return;
     }
+    const pickupLoc = document.getElementById('pickup-location')?.value.trim() || '';
+    location = pickupLoc || 'รับที่ร้าน';
   } else {
-    if (!location && !(lat && lng)) {
-      alert('กรุณาระบุที่อยู่จัดส่ง หรือปักหมุดบนแผนที่');
+    // บริการส่ง → เลือกอย่างใดอย่างหนึ่ง: GPS หรือพิมพ์ที่อยู่
+    location = document.getElementById('customer-location')?.value.trim() || '';
+    const hasGps = !!(lat && lng);
+    if (!hasGps && !location) {
+      alert('กรุณาเลือกอย่างใดอย่างหนึ่ง\n\n① กดปักหมุด GPS\nหรือ\n② พิมพ์ที่อยู่จัดส่ง');
       return;
     }
-    if (!location && lat && lng) {
+    if (!location && hasGps) {
       location = `พิกัด ${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`;
     }
   }
 
-  const order = {
-    id: getNextOrderNumber(),
-    customerName: name,
-    customerPhone: phone,
-    deliveryType: deliveryType, // pickup | delivery
-    deliveryLocation: location,
-    deliveryLat: lat ? Number(lat) : null,
-    deliveryLng: lng ? Number(lng) : null,
-    pickupTime: deliveryType === 'pickup' ? pickupTime : null,
-    note: note,
-    items: cart.map(i => ({ ...i })),
-    total: cart.reduce((s, i) => s + i.price * i.qty, 0),
-    status: 'pending',
-    createdAt: new Date().toISOString()
-  };
+  const submitBtn = document.querySelector('#checkout-form button[type="submit"]');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'กำลังบันทึก...';
+  }
 
-  addOrderToFirebase(order).then(() => {
+  try {
+    const orderId = await getNextOrderNumber();
+    const order = {
+      id: orderId,
+      customerName: name,
+      customerPhone: phone,
+      deliveryType: deliveryType, // pickup | delivery
+      deliveryLocation: location,
+      deliveryLat: lat ? Number(lat) : null,
+      deliveryLng: lng ? Number(lng) : null,
+      pickupTime: deliveryType === 'pickup' ? pickupTime : null,
+      note: note,
+      items: cart.map(i => ({ ...i })),
+      total: cart.reduce((s, i) => s + i.price * i.qty, 0),
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
+
+    await addOrderToFirebase(order);
     saveCart([]);
     updateCartUI();
     closeCheckout();
@@ -1165,7 +1239,15 @@ function placeOrder(e) {
     const phoneInput = document.getElementById('track-phone');
     if (phoneInput) phoneInput.value = order.customerPhone;
     searchOrder();
-  });
+  } catch (err) {
+    console.error('placeOrder error:', err);
+    alert('บันทึกออเดอร์ไม่สำเร็จ\n' + (err && err.message ? err.message : 'ลองใหม่อีกครั้ง'));
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'ยืนยันสั่งซื้อ';
+    }
+  }
 }
 
 function closeSuccess() {
