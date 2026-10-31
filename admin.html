@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>👨‍💼 ผู้ขาย - Coffee Shop</title>
-  <link rel="stylesheet" href="style.css?v=20261101b" />
+  <link rel="stylesheet" href="style.css?v=20261101c" />
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -171,7 +171,7 @@
                 <label style="font-size:0.85rem; color:var(--text-muted);">หรือใส่ URL รูปภาพ</label>
                 <input type="url" id="product-image-url" placeholder="https://example.com/image.jpg" />
               </div>
-              <small>ระบบย่อรูปอัตโนมัติ แล้วเก็บ base64 ในฐานข้อมูล (ไม่ใช้ Storage) · JPG/PNG/WEBP</small>
+              <small>รองรับ JPG, PNG, WEBP (แนะนำไม่เกิน 1MB) — ถ้าไม่ใส่จะใช้ไอคอนตามหมวดหมู่</small>
             </div>
           </div>
           <div class="form-actions">
@@ -214,7 +214,7 @@
             <input type="file" id="promptpay-file" accept="image/png,image/jpeg,image/jpg,image/webp,image/gif" />
             <button type="button" id="clear-promptpay-btn" class="btn btn-outline btn-sm" style="display:none;">ลบรูป</button>
           </div>
-          <small>ระบบย่อรูปอัตโนมัติ แล้วเก็บ base64 ในฐานข้อมูล (ไม่ใช้ Storage)</small>
+          <small>เลือกไฟล์รูป QR พร้อมเพย์ (JPG/PNG) แนะนำไม่เกิน 1MB</small>
         </div>
       </div>
     </section>
@@ -255,7 +255,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20261101b"></script>
+  <script src="app.js?v=20261101c"></script>
   <script>
     // Admin specific init
     document.addEventListener('DOMContentLoaded', () => {
