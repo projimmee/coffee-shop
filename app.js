@@ -6,7 +6,8 @@ const STORAGE_KEYS = {
   orders: 'coffee_orders',
   cart: 'coffee_cart',
   adminAuth: 'coffee_admin_auth',
-  promptpay: 'coffee_promptpay'
+  promptpay: 'coffee_promptpay',
+  shopClosed: 'coffee_shop_closed'
 };
 
 const DEFAULT_PRODUCTS = [
@@ -457,6 +458,163 @@ function subscribeProducts(callback) {
   }, err => console.error('subscribeProducts:', err));
 }
 
+// --- สถานะร้าน (เปิด/ปิด) ---
+let shopClosedCache = null;
+
+function isShopClosed() {
+  if (shopClosedCache !== null) return shopClosedCache;
+  try {
+    shopClosedCache = localStorage.getItem(STORAGE_KEYS.shopClosed) === '1';
+  } catch (e) {
+    shopClosedCache = false;
+  }
+  return shopClosedCache;
+}
+
+async function setShopClosed(closed) {
+  shopClosedCache = !!closed;
+  try {
+    localStorage.setItem(STORAGE_KEYS.shopClosed, closed ? '1' : '0');
+  } catch (e) { /* ignore */ }
+
+  if (firebaseReady && db) {
+    try {
+      await db.collection('settings').doc('shop').set({
+        closed: !!closed,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (e) {
+      console.error('setShopClosed Firebase:', e);
+    }
+  }
+  updateShopClosedUI();
+  updateAdminShopToggleUI();
+  if (document.getElementById('product-grid')) {
+    renderProducts();
+    updateCartUI();
+  }
+}
+
+async function loadShopStatusFromFirebase() {
+  if (!firebaseReady || !db) {
+    updateShopClosedUI();
+    updateAdminShopToggleUI();
+    return isShopClosed();
+  }
+  try {
+    const doc = await db.collection('settings').doc('shop').get();
+    if (doc.exists && typeof doc.data().closed === 'boolean') {
+      shopClosedCache = doc.data().closed;
+      try {
+        localStorage.setItem(STORAGE_KEYS.shopClosed, shopClosedCache ? '1' : '0');
+      } catch (e) { /* ignore */ }
+    }
+  } catch (e) {
+    console.error('loadShopStatusFromFirebase:', e);
+  }
+  updateShopClosedUI();
+  updateAdminShopToggleUI();
+  return isShopClosed();
+}
+
+function subscribeShopStatus() {
+  if (!firebaseReady || !db) return () => {};
+  return db.collection('settings').doc('shop').onSnapshot(doc => {
+    if (doc.exists && typeof doc.data().closed === 'boolean') {
+      const prev = shopClosedCache;
+      shopClosedCache = doc.data().closed;
+      try {
+        localStorage.setItem(STORAGE_KEYS.shopClosed, shopClosedCache ? '1' : '0');
+      } catch (e) { /* ignore */ }
+      updateShopClosedUI();
+      updateAdminShopToggleUI();
+      if (prev !== shopClosedCache && document.getElementById('product-grid')) {
+        renderProducts();
+        updateCartUI();
+      }
+    }
+  }, err => console.error('subscribeShopStatus:', err));
+}
+
+function updateShopClosedUI() {
+  const closed = isShopClosed();
+  let banner = document.getElementById('shop-closed-banner');
+  if (!banner && document.getElementById('product-grid')) {
+    banner = document.createElement('div');
+    banner.id = 'shop-closed-banner';
+    banner.className = 'shop-closed-banner';
+    banner.innerHTML = `
+      <div class="shop-closed-inner">
+        <span class="shop-closed-icon">🔒</span>
+        <div>
+          <strong>ร้านปิดชั่วคราว</strong>
+          <p>ขออภัย ขณะนี้ยังไม่รับออเดอร์ กรุณากลับมาใหม่ภายหลัง</p>
+        </div>
+      </div>`;
+    const hero = document.querySelector('.hero');
+    if (hero && hero.parentNode) {
+      hero.parentNode.insertBefore(banner, hero.nextSibling);
+    } else {
+      document.body.insertBefore(banner, document.body.firstChild);
+    }
+  }
+  if (banner) {
+    banner.style.display = closed ? 'block' : 'none';
+  }
+
+  // ปุ่มตะกร้า / checkout
+  const checkoutBtn = document.getElementById('checkout-btn');
+  if (checkoutBtn) {
+    if (closed) {
+      checkoutBtn.disabled = true;
+      checkoutBtn.textContent = 'ร้านปิด — ยังไม่รับออเดอร์';
+    } else {
+      const cart = getCart();
+      checkoutBtn.disabled = cart.length === 0;
+      checkoutBtn.textContent = 'ยืนยันการสั่งซื้อ';
+    }
+  }
+
+  // ปุ่มใส่ตะกร้าบนการ์ดสินค้า
+  document.querySelectorAll('.product-card:not(.sold-out) .product-footer .btn-primary').forEach(btn => {
+    if (closed) {
+      btn.disabled = true;
+      btn.classList.add('btn-shop-closed');
+      btn.textContent = 'ร้านปิด';
+      btn.onclick = (e) => { e.preventDefault(); alert('ร้านปิดชั่วคราว ยังไม่รับออเดอร์'); };
+    }
+  });
+  // เมื่อเปิดร้านใหม่ ให้ render products ใหม่เพื่อคืนปุ่ม
+  if (!closed && document.getElementById('product-grid')) {
+    // ไม่เรียก renderProducts ทุกครั้งเพื่อกัน loop — เรียกเฉพาะตอนเปลี่ยนสถานะจากปุ่ม
+  }
+}
+
+function updateAdminShopToggleUI() {
+  const btn = document.getElementById('toggle-shop-btn');
+  const status = document.getElementById('shop-status-text');
+  if (!btn && !status) return;
+  const closed = isShopClosed();
+  if (status) {
+    status.textContent = closed ? 'สถานะ: ปิดร้าน' : 'สถานะ: เปิดร้าน';
+    status.className = closed ? 'shop-status closed' : 'shop-status open';
+  }
+  if (btn) {
+    btn.textContent = closed ? '🟢 เปิดร้าน' : '🔒 ปิดร้าน';
+    btn.className = closed ? 'btn btn-primary btn-block' : 'btn btn-danger btn-block';
+  }
+}
+
+async function toggleShopClosed() {
+  const next = !isShopClosed();
+  const msg = next
+    ? 'ยืนยันปิดร้าน?\nลูกค้าจะไม่สามารถสั่งซื้อได้'
+    : 'ยืนยันเปิดร้าน?\nลูกค้าจะสั่งซื้อได้อีกครั้ง';
+  if (!confirm(msg)) return;
+  await setShopClosed(next);
+  alert(next ? 'ปิดร้านแล้ว' : 'เปิดร้านแล้ว');
+}
+
 // --- Cart (เก็บ local เสมอ — คนละเครื่องคนละตะกร้า) ---
 function getCart() {
   const data = localStorage.getItem(STORAGE_KEYS.cart);
@@ -509,7 +667,9 @@ function renderProducts() {
           <div class="product-price">${formatPrice(p.price)} ฿</div>
           ${soldOut
             ? `<button class="btn btn-sm btn-sold-out" disabled>หมดชั่วคราว</button>`
-            : `<button class="btn btn-primary btn-sm" onclick="addToCart('${p.id}')">+ ใส่ตะกร้า</button>`}
+            : (isShopClosed()
+              ? `<button class="btn btn-sm btn-sold-out" disabled>ร้านปิด</button>`
+              : `<button class="btn btn-primary btn-sm" onclick="addToCart('${p.id}')">+ ใส่ตะกร้า</button>`)}
         </div>
       </div>
     </div>`;
@@ -527,6 +687,10 @@ let pendingProduct = null;
 let pendingQty = 1;
 
 function addToCart(productId) {
+  if (isShopClosed()) {
+    alert('ร้านปิดชั่วคราว\nยังไม่สามารถสั่งซื้อได้ในขณะนี้');
+    return;
+  }
   const products = getProducts();
   const product = products.find(p => p.id === productId);
   if (!product) return;
@@ -645,7 +809,15 @@ function updateCartUI() {
   if (totalEl) totalEl.textContent = formatPrice(total);
 
   const checkoutBtn = document.getElementById('checkout-btn');
-  if (checkoutBtn) checkoutBtn.disabled = cart.length === 0;
+  if (checkoutBtn) {
+    if (isShopClosed()) {
+      checkoutBtn.disabled = true;
+      checkoutBtn.textContent = 'ร้านปิด — ยังไม่รับออเดอร์';
+    } else {
+      checkoutBtn.disabled = cart.length === 0;
+      checkoutBtn.textContent = 'ยืนยันการสั่งซื้อ';
+    }
+  }
 }
 
 function renderCartItems() {
@@ -821,6 +993,10 @@ function pinLocationOnMaps() {
 }
 
 function openCheckout() {
+  if (isShopClosed()) {
+    alert('ร้านปิดชั่วคราว\nยังไม่สามารถสั่งซื้อได้ในขณะนี้');
+    return;
+  }
   const cart = getCart();
   if (cart.length === 0) return;
 
@@ -850,6 +1026,10 @@ function closeCheckout() {
 
 function placeOrder(e) {
   e.preventDefault();
+  if (isShopClosed()) {
+    alert('ร้านปิดชั่วคราว\nยังไม่สามารถสั่งซื้อได้ในขณะนี้');
+    return;
+  }
   let cart = getCart();
   if (cart.length === 0) return;
 
@@ -986,6 +1166,8 @@ function showAdminDashboard() {
     startOrdersPolling();
   }
   loadPromptPayFromFirebase();
+  loadShopStatusFromFirebase();
+  subscribeShopStatus();
 }
 
 function setupTabs() {
@@ -998,6 +1180,7 @@ function setupTabs() {
       document.getElementById(tabId)?.classList.add('active');
       if (btn.dataset.tab === 'settings') {
         updatePromptPayPreview();
+        updateAdminShopToggleUI();
       }
     });
   });
@@ -2208,12 +2391,16 @@ function initBuyer() {
         searchOrder();
       }
     });
+    loadShopStatusFromFirebase();
+    subscribeShopStatus();
   } else {
     renderProducts();
+    updateShopClosedUI();
   }
 
   setupFilters();
   updateCartUI();
+  updateShopClosedUI();
 
   document.getElementById('cart-btn')?.addEventListener('click', (e) => {
     e.preventDefault();
@@ -2324,7 +2511,9 @@ function initAdmin() {
   document.getElementById('print-receipt-btn')?.addEventListener('click', printReceipt);
   document.getElementById('promptpay-file')?.addEventListener('change', handlePromptPayUpload);
   document.getElementById('clear-promptpay-btn')?.addEventListener('click', clearPromptPay);
+  document.getElementById('toggle-shop-btn')?.addEventListener('click', toggleShopClosed);
   updatePromptPayPreview();
+  updateAdminShopToggleUI();
 
   document.querySelectorAll('.modal').forEach(modal => {
     modal.addEventListener('click', (e) => {
