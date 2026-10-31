@@ -491,26 +491,29 @@ function renderProducts() {
     return;
   }
 
-  grid.innerHTML = products.map(p => `
-    <div class="product-card">
+  grid.innerHTML = products.map(p => {
+    const soldOut = !!p.outOfStock;
+    return `
+    <div class="product-card ${soldOut ? 'sold-out' : ''}">
       <div class="product-image">
         ${p.image
           ? `<img src="${p.image}" alt="${p.name}" onerror="this.parentElement.innerHTML='${getIcon(p.category)}'">`
           : getIcon(p.category)}
+        ${soldOut ? '<div class="sold-out-badge">หมด</div>' : ''}
       </div>
       <div class="product-body">
         <div class="product-category">${p.category}</div>
-        <div class="product-name">${p.name}</div>
+        <div class="product-name">${p.name}${soldOut ? ' <span class="sold-out-label">สินค้าหมด</span>' : ''}</div>
         <div class="product-desc">${p.description || ''}</div>
         <div class="product-footer">
           <div class="product-price">${formatPrice(p.price)} ฿</div>
-          <button class="btn btn-primary btn-sm" onclick="addToCart('${p.id}')">
-            + ใส่ตะกร้า
-          </button>
+          ${soldOut
+            ? `<button class="btn btn-sm btn-sold-out" disabled>หมดชั่วคราว</button>`
+            : `<button class="btn btn-primary btn-sm" onclick="addToCart('${p.id}')">+ ใส่ตะกร้า</button>`}
         </div>
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 function setupFilters() {
@@ -527,6 +530,10 @@ function addToCart(productId) {
   const products = getProducts();
   const product = products.find(p => p.id === productId);
   if (!product) return;
+  if (product.outOfStock) {
+    alert('สินค้านี้หมดชั่วคราว ไม่สามารถสั่งซื้อได้');
+    return;
+  }
 
   pendingProduct = product;
   pendingQty = 1;
@@ -843,8 +850,31 @@ function closeCheckout() {
 
 function placeOrder(e) {
   e.preventDefault();
-  const cart = getCart();
+  let cart = getCart();
   if (cart.length === 0) return;
+
+  // กันสั่งสินค้าที่เพิ่งถูกตั้งหมด
+  const products = getProducts();
+  const soldOutInCart = cart.filter(item => {
+    const p = products.find(x => x.id === item.id);
+    return p && p.outOfStock;
+  });
+  if (soldOutInCart.length > 0) {
+    const names = soldOutInCart.map(i => i.name).join(', ');
+    alert('มีสินค้าหมดในตะกร้า: ' + names + '\nกรุณาลบออกก่อนสั่งซื้อ');
+    // ลบสินค้าหมดออกจากตะกร้าอัตโนมัติ
+    cart = cart.filter(item => {
+      const p = products.find(x => x.id === item.id);
+      return !(p && p.outOfStock);
+    });
+    saveCart(cart);
+    updateCartUI();
+    renderCartItems();
+    if (cart.length === 0) {
+      closeCheckout();
+      return;
+    }
+  }
 
   const name = document.getElementById('customer-name').value.trim();
   const phone = document.getElementById('customer-phone').value.trim();
@@ -1578,25 +1608,47 @@ function renderAdminProducts() {
     return;
   }
 
-  list.innerHTML = products.map(p => `
-    <div class="admin-product-item">
+  list.innerHTML = products.map(p => {
+    const soldOut = !!p.outOfStock;
+    return `
+    <div class="admin-product-item ${soldOut ? 'is-sold-out' : ''}">
       <div class="info">
         <div class="thumb">
           ${p.image
             ? `<img src="${p.image}" alt="" onerror="this.parentElement.innerHTML='${getIcon(p.category)}'">`
             : getIcon(p.category)}
+          ${soldOut ? '<span class="admin-sold-out-mark">หมด</span>' : ''}
         </div>
         <div>
-          <div class="name">${p.name}</div>
+          <div class="name">${p.name}${soldOut ? ' <span class="sold-out-label">สินค้าหมด</span>' : ''}</div>
           <div class="meta">${p.category} · ${formatPrice(p.price)} ฿</div>
         </div>
       </div>
-      <div style="display:flex; gap:0.4rem;">
+      <div class="admin-product-actions">
+        <button type="button" class="btn btn-sm ${soldOut ? 'btn-success-soft' : 'btn-warning-soft'}"
+          onclick="toggleOutOfStock('${p.id}')"
+          title="${soldOut ? 'เปิดขายอีกครั้ง' : 'ตั้งเป็นสินค้าหมด'}">
+          ${soldOut ? '✅ มีสินค้า' : '🚫 สินค้าหมด'}
+        </button>
         <button class="btn btn-outline btn-sm" onclick="editProduct('${p.id}')">แก้ไข</button>
         <button class="btn btn-danger btn-sm" onclick="deleteProduct('${p.id}')">ลบ</button>
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
+}
+
+/** สลับสถานะสินค้าหมด / มีสินค้า */
+async function toggleOutOfStock(id) {
+  const products = getProducts();
+  const idx = products.findIndex(p => p.id === id);
+  if (idx === -1) return;
+  products[idx] = {
+    ...products[idx],
+    outOfStock: !products[idx].outOfStock
+  };
+  await saveProducts(products);
+  renderAdminProducts();
+  renderProducts();
 }
 
 function setImagePreview(src) {

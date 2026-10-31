@@ -1873,3 +1873,120 @@ body {
   display: inline-flex;
   align-items: center;
 }
+
+/* ===== Sold out / สินค้าหมด ===== */
+.product-card.sold-out {
+  opacity: 0.85;
+  position: relative;
+}
+
+.product-card.sold-out .product-image {
+  filter: grayscale(0.35);
+}
+
+.product-card.sold-out .product-image img {
+  filter: grayscale(0.4);
+}
+
+.sold-out-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(196, 69, 54, 0.92);
+  color: white;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.28rem 0.65rem;
+  border-radius: 20px;
+  letter-spacing: 0.3px;
+  z-index: 2;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.product-image {
+  position: relative;
+}
+
+.sold-out-label {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--danger);
+  background: #FDE8E8;
+  padding: 0.12rem 0.45rem;
+  border-radius: 6px;
+  vertical-align: middle;
+  margin-left: 0.25rem;
+}
+
+.btn-sold-out {
+  background: #E8E0D8;
+  color: var(--text-muted);
+  cursor: not-allowed;
+  box-shadow: none;
+  border: none;
+}
+
+.btn-sold-out:disabled {
+  opacity: 1;
+}
+
+.btn-warning-soft {
+  background: #FFF4E5;
+  color: #C47A00;
+  border: 1.5px solid #F5D9A8;
+}
+
+.btn-warning-soft:hover {
+  background: #FFE8C2;
+  transform: translateY(-1px);
+}
+
+.btn-success-soft {
+  background: #E6F6ED;
+  color: #0D7A3F;
+  border: 1.5px solid #A8E0C0;
+}
+
+.btn-success-soft:hover {
+  background: #D4F0E0;
+  transform: translateY(-1px);
+}
+
+.admin-product-item.is-sold-out {
+  border-color: #F5C6C0;
+  background: #FFFCFA;
+}
+
+.admin-product-item .thumb {
+  position: relative;
+}
+
+.admin-sold-out-mark {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  background: var(--danger);
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.1rem 0.35rem;
+  border-radius: 6px;
+}
+
+.admin-product-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+@media (max-width: 768px) {
+  .admin-product-actions {
+    width: 100%;
+  }
+  .admin-product-actions .btn {
+    flex: 1;
+    justify-content: center;
+  }
+}
