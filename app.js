@@ -1769,16 +1769,13 @@ function renderRevenue() {
   const orders = getRevenueOrders();
   const total = orders.reduce((s, o) => s + (Number(o.total) || 0), 0);
   const count = orders.length;
-  const avg = count ? total / count : 0;
 
   const totalEl = document.getElementById('revenue-total-amount');
   const countEl = document.getElementById('revenue-order-count');
-  const avgEl = document.getElementById('revenue-avg');
   const noteEl = document.getElementById('revenue-note');
 
   if (totalEl) totalEl.textContent = formatPrice(total) + ' ฿';
   if (countEl) countEl.textContent = String(count);
-  if (avgEl) avgEl.textContent = formatPrice(Math.round(avg)) + ' ฿';
 
   const cleared = getRevenueClearedAt();
   if (noteEl) {
@@ -1824,6 +1821,12 @@ function renderRevenue() {
 }
 
 function resetRevenue() {
+  const pw = prompt('กรุณากรอกรหัสผ่านผู้ขายเพื่อรีเซ็ตรายได้:');
+  if (pw === null) return;
+  if (pw !== 'admin123') {
+    alert('รหัสผ่านไม่ถูกต้อง');
+    return;
+  }
   if (!confirm('รีเซ็ตรายได้ทั้งหมดในรอบนี้?\n\nยอดรวมจะเริ่มนับใหม่จาก 0\n(ออเดอร์เก่าจะไม่ถูกลบ แต่ไม่นับในรายได้อีก)')) {
     return;
   }
