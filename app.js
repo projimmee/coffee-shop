@@ -795,7 +795,7 @@ function addToCart(productId) {
   if (preview) {
     const icon = getIcon(product.category);
     const imgHtml = product.image
-      ? `<img src="${product.image}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;" onerror="this.parentElement.textContent='${icon}'">`
+      ? `<img src="${product.image}" style="width:100%;height:100%;object-fit:contain;border-radius:12px;" onerror="this.parentElement.textContent='${icon}'">`
       : icon;
     preview.innerHTML = `
       <div class="np-icon">${imgHtml}</div>
@@ -1868,14 +1868,17 @@ async function loadPromptPayFromFirebase() {
 }
 
 async function savePromptPayImage(dataUrl) {
-  // เก็บ base64 ในฐานข้อมูลเดิม (localStorage + Firestore settings/promptpay)
-  // ไม่ใช้ Firebase Storage
   let finalUrl = dataUrl || '';
 
-  if (finalUrl && finalUrl.startsWith('data:') && finalUrl.length > 250000) {
-    finalUrl = await compressImageIfNeeded(finalUrl, 360, 0.65);
+  // อัปโหลดขึ้น Firebase Storage ถ้าเป็น data URL
+  if (finalUrl && finalUrl.startsWith('data:') && firebaseReady) {
+    finalUrl = await uploadImageToFirebase(
+      'settings/promptpay_' + Date.now() + '.jpg',
+      finalUrl
+    );
   }
 
+  // บันทึก URL ลง Firestore
   if (firebaseReady && db) {
     try {
       if (finalUrl) {
@@ -1891,6 +1894,7 @@ async function savePromptPayImage(dataUrl) {
     }
   }
 
+  // เก็บใน localStorage (URL สั้น หรือ data URL fallback)
   try {
     if (finalUrl) {
       localStorage.setItem(STORAGE_KEYS.promptpay, finalUrl);
@@ -1899,15 +1903,16 @@ async function savePromptPayImage(dataUrl) {
     }
   } catch (e) {
     console.error('savePromptPayImage localStorage:', e);
+    // ถ้าเป็น URL จาก Firebase จะสั้น ไม่น่าเต็ม — ถ้า data URL เต็ม แจ้งเตือน
     if (finalUrl && finalUrl.startsWith('data:')) {
-      alert('พื้นที่จัดเก็บในเครื่องเต็ม\nถ้าเปิด Firebase ไว้ รูปอาจถูกบันทึกบนเซิร์ฟเวอร์แล้ว');
-      updatePromptPayPreview();
-      return !!firebaseReady;
+      alert('พื้นที่จัดเก็บในเครื่องเต็ม กรุณาเปิด Firebase เพื่อเก็บรูปออนไลน์');
+      return false;
     }
   }
   updatePromptPayPreview();
   return true;
 }
+
 function updatePromptPayPreview() {
   const preview = document.getElementById('promptpay-preview');
   const clearBtn = document.getElementById('clear-promptpay-btn');
@@ -1936,6 +1941,7 @@ function handlePromptPayUpload(e) {
     return;
   }
 
+  // ยอมรับไฟล์ใหญ่ขึ้น แล้วค่อยย่อ
   if (file.size > 5 * 1024 * 1024) {
     alert('ไฟล์ใหญ่เกินไป (สูงสุด 5MB)');
     input.value = '';
@@ -1944,13 +1950,15 @@ function handlePromptPayUpload(e) {
 
   const reader = new FileReader();
   reader.onload = () => {
+    // ย่อรูป QR ให้ชัดแต่ไม่ใหญ่เกิน (max 400px, quality 0.7)
     compressImageIfNeeded(reader.result, 400, 0.7).then(async src => {
       let finalSrc = src;
-      if (src.length > 180000) {
-        finalSrc = await compressImageIfNeeded(src, 320, 0.6);
+      if (src.length > 400000) {
+        finalSrc = await compressImageIfNeeded(src, 300, 0.6);
       }
+      // แสดงสถานะกำลังอัปโหลด
       const preview = document.getElementById('promptpay-preview');
-      if (preview) preview.innerHTML = '<span class="preview-placeholder">กำลังบันทึก...</span>';
+      if (preview) preview.innerHTML = '<span class="preview-placeholder">กำลังอัปโหลด...</span>';
 
       const ok = await savePromptPayImage(finalSrc);
       if (ok !== false) {
@@ -1959,8 +1967,10 @@ function handlePromptPayUpload(e) {
         document.querySelector('[data-tab="settings"]')?.classList.add('active');
         document.getElementById('tab-settings')?.classList.add('active');
         updatePromptPayPreview();
-        const kb = Math.round((finalSrc.length * 0.75) / 1024);
-        alert('บันทึกรูปพร้อมเพย์เรียบร้อย\n(ย่อแล้ว ~' + kb + ' KB · เก็บ base64 ในฐานข้อมูล)');
+        const msg = firebaseReady
+          ? 'บันทึกรูปพร้อมเพย์เรียบร้อย (อัปขึ้น Firebase แล้ว)'
+          : 'บันทึกรูปพร้อมเพย์ในเครื่องแล้ว\n(เปิด Firebase เพื่อใช้ข้ามเครื่อง)';
+        alert(msg);
       }
     }).catch(err => {
       console.error(err);
@@ -1973,6 +1983,7 @@ function handlePromptPayUpload(e) {
   };
   reader.readAsDataURL(file);
 }
+
 function clearPromptPay() {
   if (!confirm('ลบรูปพร้อมเพย์ใช่หรือไม่?')) return;
   savePromptPayImage('');
@@ -2190,20 +2201,21 @@ function handleImageFileSelect(e) {
     return;
   }
 
-  if (file.size > 5 * 1024 * 1024) {
-    alert('ไฟล์ใหญ่เกินไป (ไม่เกิน 5MB)\nลองเลือกรูปที่เล็กกว่า');
+  // จำกัดขนาด ~1.5MB (base64 จะใหญ่ขึ้นอีก ~33%)
+  if (file.size > 1.5 * 1024 * 1024) {
+    alert('ไฟล์ใหญ่เกินไป (แนะนำไม่เกิน 1.5MB)\nลองย่อรูปก่อนอัปโหลด');
     e.target.value = '';
     return;
   }
 
   const reader = new FileReader();
   reader.onload = () => {
-    // ย่อขนาดอัตโนมัติ → เก็บเป็น base64 ในฐานข้อมูล (ไม่ใช้ Firebase Storage)
-    compressImageIfNeeded(reader.result, 480, 0.7).then(finalSrc => {
+    const dataUrl = reader.result;
+    // ถ้าใหญ่เกินไปหลังแปลง ลองย่อด้วย canvas
+    compressImageIfNeeded(dataUrl, 800, 0.75).then(finalSrc => {
       setImagePreview(finalSrc);
       const urlInput = document.getElementById('product-image-url');
-      if (urlInput) urlInput.value = '';
-      console.log('[Image] base64 ~' + Math.round((finalSrc.length * 0.75) / 1024) + ' KB');
+      if (urlInput) urlInput.value = ''; // ล้าง URL เมื่ออัปโหลดไฟล์
     });
   };
   reader.onerror = () => {
@@ -2212,13 +2224,12 @@ function handleImageFileSelect(e) {
   };
   reader.readAsDataURL(file);
 }
+
 function compressImageIfNeeded(dataUrl, maxWidth, quality) {
-  // ย่อรูป + แปลงเป็น JPEG base64 สำหรับเก็บในฐานข้อมูล (Firestore/localStorage)
-  maxWidth = maxWidth || 480;
-  quality = quality == null ? 0.7 : quality;
   return new Promise(resolve => {
-    if (!dataUrl || !String(dataUrl).startsWith('data:')) {
-      resolve(dataUrl || '');
+    // ถ้าเล็กอยู่แล้ว ไม่ต้องย่อ
+    if (dataUrl.length < 200000) {
+      resolve(dataUrl);
       return;
     }
     const img = new Image();
@@ -2229,39 +2240,15 @@ function compressImageIfNeeded(dataUrl, maxWidth, quality) {
         h = Math.round(h * (maxWidth / w));
         w = maxWidth;
       }
-      const maxHeight = Math.round(maxWidth * 1.25);
-      if (h > maxHeight) {
-        w = Math.round(w * (maxHeight / h));
-        h = maxHeight;
-      }
       const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, w);
-      canvas.height = Math.max(1, h);
+      canvas.width = w;
+      canvas.height = h;
       const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, w, h);
       try {
-        let compressed = canvas.toDataURL('image/jpeg', quality);
-        let q = quality;
-        while (compressed.length > 180000 && q > 0.4) {
-          q = Math.max(0.4, q - 0.1);
-          compressed = canvas.toDataURL('image/jpeg', q);
-        }
-        if (compressed.length > 180000 && canvas.width > 240) {
-          const scale = 240 / canvas.width;
-          const c2 = document.createElement('canvas');
-          c2.width = 240;
-          c2.height = Math.max(1, Math.round(canvas.height * scale));
-          const ctx2 = c2.getContext('2d');
-          ctx2.fillStyle = '#FFFFFF';
-          ctx2.fillRect(0, 0, c2.width, c2.height);
-          ctx2.drawImage(canvas, 0, 0, c2.width, c2.height);
-          compressed = c2.toDataURL('image/jpeg', 0.65);
-        }
+        const compressed = canvas.toDataURL('image/jpeg', quality);
         resolve(compressed);
       } catch (err) {
-        console.warn('compressImageIfNeeded failed:', err);
         resolve(dataUrl);
       }
     };
@@ -2269,6 +2256,7 @@ function compressImageIfNeeded(dataUrl, maxWidth, quality) {
     img.src = dataUrl;
   });
 }
+
 function handleImageUrlInput() {
   const url = document.getElementById('product-image-url')?.value.trim() || '';
   if (url) {
@@ -2374,12 +2362,12 @@ async function saveProduct(e) {
   }
 
   try {
-    // สร้าง id ก่อน ถ้าเป็นสินค้าใหม่
+    // สร้าง id ก่อน ถ้าเป็นสินค้าใหม่ (เพื่อใช้ path อัปโหลด)
     const productId = id || generateId('p');
 
-    // เก็บรูปเป็น base64 ในฐานข้อมูลเดิมเท่านั้น — ไม่ใช้ Firebase Storage
-    if (image && image.startsWith('data:') && image.length > 250000) {
-      image = await compressImageIfNeeded(image, 400, 0.65);
+    // อัปโหลดรูปขึ้น Firebase ถ้าเป็น data URL
+    if (image && image.startsWith('data:')) {
+      image = await ensureRemoteImageUrl(image, `products/${productId}_${Date.now()}.jpg`);
     }
 
     let products = getProducts();
@@ -2407,8 +2395,8 @@ async function saveProduct(e) {
     renderProducts();
 
     const msg = id ? 'แก้ไขสินค้าเรียบร้อย' : 'เพิ่มสินค้าเรียบร้อย';
-    alert(image && image.startsWith('data:')
-      ? msg + ' (เก็บรูป base64 ในฐานข้อมูลแล้ว)'
+    alert(firebaseReady && image && image.startsWith('http')
+      ? msg + ' (รูปอัปขึ้น Firebase แล้ว)'
       : msg);
   } catch (err) {
     console.error(err);
