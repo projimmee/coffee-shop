@@ -96,7 +96,7 @@
           <input type="text" id="customer-location" placeholder="เช่น โต๊ะ 5, หน้าร้าน, เคาน์เตอร์" />
           <div id="delivery-map-actions" class="delivery-map-actions" style="display:none;">
             <button type="button" id="pin-location-btn" class="btn btn-outline btn-block" style="margin-top:0.6rem;">
-              📍 ปักหมุดที่อยู่บนแผนที่
+              📍 ปักหมุดที่อยู่บนแผนที่ (GPS)
             </button>
             <div id="pinned-location-info" class="pinned-location-info" style="display:none;">
               <div class="pinned-coords" id="pinned-coords-text"></div>
@@ -105,8 +105,21 @@
             </div>
             <input type="hidden" id="delivery-lat" value="" />
             <input type="hidden" id="delivery-lng" value="" />
-            <small id="location-hint" style="display:block;margin-top:0.45rem;">กดปักหมุดเพื่อใช้ตำแหน่งปัจจุบัน หรือเปิด Google Maps เลือกจุด แล้วกลับมากรอกรายละเอียด</small>
+            <small id="location-hint" style="display:block;margin-top:0.45rem;">กดปักหมุดเพื่อใช้ตำแหน่งปัจจุบันจาก GPS หรือเปิด Google Maps แล้วกลับมากรอกรายละเอียดที่อยู่</small>
           </div>
+        </div>
+        <div class="form-group" id="pickup-time-group">
+          <label>เวลารับที่ร้าน *</label>
+          <div class="pickup-time-row">
+            <input type="time" id="pickup-time" required />
+            <div class="pickup-quick-times">
+              <button type="button" class="quick-tag pickup-quick" data-mins="0">เร็วที่สุด</button>
+              <button type="button" class="quick-tag pickup-quick" data-mins="15">+15 นาที</button>
+              <button type="button" class="quick-tag pickup-quick" data-mins="30">+30 นาที</button>
+              <button type="button" class="quick-tag pickup-quick" data-mins="45">+45 นาที</button>
+            </div>
+          </div>
+          <small style="display:block;margin-top:0.35rem;color:var(--text-muted);">ระบุเวลาที่ต้องการมารับสินค้า</small>
         </div>
         <div class="form-group">
           <label>หมายเหตุ (ถ้ามี)</label>
@@ -183,14 +196,11 @@
       </div>
       <div class="track-body">
         <div class="form-group">
-          <label>หมายเลขออเดอร์ *</label>
-          <input type="text" id="track-order-id" placeholder="เช่น 001, 042, 999" />
-        </div>
-        <div class="form-group">
           <label>เบอร์โทรที่ใช้สั่ง *</label>
-          <input type="tel" id="track-phone" placeholder="เบอร์เดียวกับตอนสั่งซื้อ" />
+          <input type="tel" id="track-phone" placeholder="เช่น 08x-xxx-xxxx" />
+          <small style="display:block;margin-top:0.35rem;color:var(--text-muted);">ใส่เบอร์เดียวกับตอนสั่งซื้อ ระบบจะแสดงออเดอร์ทั้งหมดของเบอร์นี้</small>
         </div>
-        <button id="track-search-btn" class="btn btn-primary btn-block">ค้นหา</button>
+        <button id="track-search-btn" class="btn btn-primary btn-block">ค้นหาออเดอร์</button>
         <div id="track-result" class="track-result" style="display:none;">
           <!-- result will show here -->
         </div>

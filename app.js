@@ -873,6 +873,8 @@ function setDeliveryType(type) {
   const label = document.getElementById('location-label');
   const locInput = document.getElementById('customer-location');
   const mapActions = document.getElementById('delivery-map-actions');
+  const pickupTimeGroup = document.getElementById('pickup-time-group');
+  const pickupTimeInput = document.getElementById('pickup-time');
 
   if (type === 'pickup') {
     if (label) label.textContent = 'จุดรับที่ร้าน';
@@ -882,6 +884,11 @@ function setDeliveryType(type) {
       if (!locInput.value.trim()) locInput.value = 'รับที่ร้าน';
     }
     if (mapActions) mapActions.style.display = 'none';
+    if (pickupTimeGroup) pickupTimeGroup.style.display = 'block';
+    if (pickupTimeInput) {
+      pickupTimeInput.required = true;
+      if (!pickupTimeInput.value) setPickupTimeFromNow(15);
+    }
   } else {
     if (label) label.textContent = 'ที่อยู่จัดส่ง *';
     if (locInput) {
@@ -890,7 +897,31 @@ function setDeliveryType(type) {
       if (locInput.value === 'รับที่ร้าน') locInput.value = '';
     }
     if (mapActions) mapActions.style.display = 'block';
+    if (pickupTimeGroup) pickupTimeGroup.style.display = 'none';
+    if (pickupTimeInput) {
+      pickupTimeInput.required = false;
+      pickupTimeInput.value = '';
+    }
   }
+}
+
+/** ตั้งค่า input type=time จากเวลาปัจจุบัน + นาที */
+function setPickupTimeFromNow(extraMins) {
+  const input = document.getElementById('pickup-time');
+  if (!input) return;
+  const d = new Date();
+  d.setMinutes(d.getMinutes() + (Number(extraMins) || 0));
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  input.value = `${hh}:${mm}`;
+}
+
+function formatPickupTime(t) {
+  if (!t) return '';
+  // ค่าจาก input type=time เป็น HH:MM
+  const parts = String(t).split(':');
+  if (parts.length < 2) return t;
+  return `${parts[0]}:${parts[1]} น.`;
 }
 
 function clearPinnedLocation() {
@@ -1063,9 +1094,14 @@ function placeOrder(e) {
   const note = document.getElementById('customer-note').value.trim();
   const lat = document.getElementById('delivery-lat')?.value || '';
   const lng = document.getElementById('delivery-lng')?.value || '';
+  const pickupTime = document.getElementById('pickup-time')?.value || '';
 
   if (deliveryType === 'pickup') {
     if (!location) location = 'รับที่ร้าน';
+    if (!pickupTime) {
+      alert('กรุณาระบุเวลารับที่ร้าน');
+      return;
+    }
   } else {
     if (!location && !(lat && lng)) {
       alert('กรุณาระบุที่อยู่จัดส่ง หรือปักหมุดบนแผนที่');
@@ -1084,6 +1120,7 @@ function placeOrder(e) {
     deliveryLocation: location,
     deliveryLat: lat ? Number(lat) : null,
     deliveryLng: lng ? Number(lng) : null,
+    pickupTime: deliveryType === 'pickup' ? pickupTime : null,
     note: note,
     items: cart.map(i => ({ ...i })),
     total: cart.reduce((s, i) => s + i.price * i.qty, 0),
@@ -1100,9 +1137,7 @@ function placeOrder(e) {
     setDeliveryType('pickup');
 
     openTrack();
-    const input = document.getElementById('track-order-id');
     const phoneInput = document.getElementById('track-phone');
-    if (input) input.value = order.id;
     if (phoneInput) phoneInput.value = order.customerPhone;
     searchOrder();
   });
@@ -1288,12 +1323,13 @@ function renderOrders() {
       if (hasGps) {
         gpsBlock = `
           <div class="order-gps-box">
-            <div class="order-gps-title">📍 พิกัด GPS</div>
-            <div class="order-gps-coords">${Number(o.deliveryLat).toFixed(6)}, ${Number(o.deliveryLng).toFixed(6)}</div>
+            <div class="order-gps-title">📍 ที่อยู่จัดส่ง / พิกัด GPS</div>
             ${o.deliveryLocation ? `<div class="order-gps-addr">${o.deliveryLocation}</div>` : ''}
+            <div class="order-gps-coords">${Number(o.deliveryLat).toFixed(6)}, ${Number(o.deliveryLng).toFixed(6)}</div>
             <div class="order-gps-actions">
               <a class="btn btn-primary btn-sm" href="${navUrl}" target="_blank" rel="noopener">🧭 นำทาง</a>
               <a class="btn btn-outline btn-sm" href="${mapsUrl}" target="_blank" rel="noopener">แผนที่</a>
+              <a class="btn btn-outline btn-sm" href="tel:${o.customerPhone}">📞 โทร</a>
             </div>
           </div>`;
       } else if (o.deliveryLocation) {
@@ -1301,8 +1337,22 @@ function renderOrders() {
           <div class="order-gps-box order-gps-no-pin">
             <div class="order-gps-title">📍 ที่อยู่จัดส่ง (ไม่มีพิกัด)</div>
             <div class="order-gps-addr">${o.deliveryLocation}</div>
+            <div class="order-gps-actions">
+              <a class="btn btn-outline btn-sm" href="tel:${o.customerPhone}">📞 โทร</a>
+            </div>
           </div>`;
       }
+    } else {
+      // รับที่ร้าน
+      gpsBlock = `
+        <div class="order-gps-box order-gps-no-pin">
+          <div class="order-gps-title">🏪 รับที่ร้าน</div>
+          ${o.deliveryLocation ? `<div class="order-gps-addr">${o.deliveryLocation}</div>` : ''}
+          ${o.pickupTime ? `<div class="order-pickup-time">⏰ เวลารับ: <strong>${formatPickupTime(o.pickupTime)}</strong></div>` : ''}
+          <div class="order-gps-actions">
+            <a class="btn btn-outline btn-sm" href="tel:${o.customerPhone}">📞 โทร</a>
+          </div>
+        </div>`;
     }
 
     return `
@@ -1311,12 +1361,12 @@ function renderOrders() {
         <h3>${o.id}${isNew ? ' <span style="color:var(--accent);font-size:0.8rem;">ใหม่!</span>' : ''}</h3>
         <div class="order-meta">
           <span>👤 ${o.customerName}</span>
-          <span>📞 ${o.customerPhone}</span>
+          <a class="order-phone-link" href="tel:${o.customerPhone}">📞 ${o.customerPhone}</a>
           <span class="delivery-type-tag ${o.deliveryType === 'delivery' ? 'is-delivery' : 'is-pickup'}">${o.deliveryType === 'delivery' ? '🛵 จัดส่ง' : '🏪 รับที่ร้าน'}</span>
           <span>🕒 ${formatDate(o.createdAt)}</span>
+          ${o.deliveryType === 'pickup' && o.pickupTime ? `<span class="pickup-time-tag">⏰ รับ ${formatPickupTime(o.pickupTime)}</span>` : ''}
         </div>
         ${gpsBlock}
-        ${o.deliveryType !== 'delivery' && o.deliveryLocation ? `<div class="order-pickup-loc">📍 ${o.deliveryLocation}</div>` : ''}
         <div style="margin-top:0.35rem; font-size:0.88rem; color:var(--text-muted);">
           ${itemSummary}
         </div>
@@ -1328,6 +1378,7 @@ function renderOrders() {
       <div class="order-actions">
         ${actionBtns}
         ${hasGps ? `<a class="btn btn-primary btn-sm" href="${navUrl}" target="_blank" rel="noopener">🧭 นำทาง</a>` : ''}
+        <a class="btn btn-outline btn-sm" href="tel:${o.customerPhone}">📞 โทร</a>
         <button class="btn btn-outline btn-sm" onclick="viewOrderDetail('${o.id}')">รายละเอียด</button>
       </div>
     </div>`;
@@ -1416,15 +1467,23 @@ function viewOrderDetail(orderId) {
           <div class="order-gps-actions">
             <a class="btn btn-primary btn-sm" href="${navUrl}" target="_blank" rel="noopener">🧭 นำทาง Google Maps</a>
             <a class="btn btn-outline btn-sm" href="${mapsUrl}" target="_blank" rel="noopener">เปิดแผนที่</a>
+            <a class="btn btn-outline btn-sm" href="tel:${order.customerPhone}">📞 โทรลูกค้า</a>
           </div>
           ${mapEmbed}
-        ` : `<div class="order-gps-coords" style="color:var(--warning);">ยังไม่มีพิกัด GPS จากลูกค้า</div>`}
+        ` : `<div class="order-gps-coords" style="color:var(--warning);">ยังไม่มีพิกัด GPS จากลูกค้า</div>
+          <div class="order-gps-actions">
+            <a class="btn btn-outline btn-sm" href="tel:${order.customerPhone}">📞 โทรลูกค้า</a>
+          </div>`}
       </div>`;
-  } else if (order.deliveryLocation) {
+  } else {
     gpsDetailHtml = `
       <div class="order-gps-box order-gps-no-pin detail-gps-box">
-        <div class="order-gps-title">🏪 จุดรับที่ร้าน</div>
-        <div class="order-gps-addr">${order.deliveryLocation}</div>
+        <div class="order-gps-title">🏪 รับที่ร้าน</div>
+        ${order.deliveryLocation ? `<div class="order-gps-addr">${order.deliveryLocation}</div>` : ''}
+        ${order.pickupTime ? `<div class="order-pickup-time">⏰ เวลารับที่ต้องการ: <strong>${formatPickupTime(order.pickupTime)}</strong></div>` : ''}
+        <div class="order-gps-actions">
+          <a class="btn btn-outline btn-sm" href="tel:${order.customerPhone}">📞 โทรลูกค้า</a>
+        </div>
       </div>`;
   }
 
@@ -1432,8 +1491,9 @@ function viewOrderDetail(orderId) {
   body.innerHTML = `
     <div class="detail-row"><span>หมายเลข</span><strong>${order.id}</strong></div>
     <div class="detail-row"><span>ลูกค้า</span><strong>${order.customerName}</strong></div>
-    <div class="detail-row"><span>เบอร์โทร</span><strong><a href="tel:${order.customerPhone}">${order.customerPhone}</a></strong></div>
+    <div class="detail-row"><span>เบอร์โทร</span><strong><a href="tel:${order.customerPhone}">${order.customerPhone}</a> · <a class="btn btn-outline btn-sm" href="tel:${order.customerPhone}" style="margin-left:0.4rem;">📞 โทร</a></strong></div>
     <div class="detail-row"><span>วิธีรับ</span><strong>${order.deliveryType === 'delivery' ? '🛵 บริการจัดส่ง' : '🏪 รับที่ร้าน'}</strong></div>
+    ${order.deliveryType === 'pickup' && order.pickupTime ? `<div class="detail-row"><span>เวลารับ</span><strong>⏰ ${formatPickupTime(order.pickupTime)}</strong></div>` : ''}
     <div class="detail-row"><span>เวลาสั่ง</span><strong>${formatDate(order.createdAt)}</strong></div>
     <div class="detail-row"><span>สถานะ</span>
       <span class="status-badge status-${order.status}">${STATUS_LABELS[order.status] || order.status}</span>
@@ -1459,6 +1519,7 @@ function viewOrderDetail(orderId) {
     <div class="status-actions">
       ${actionBtns}
       ${hasGps ? `<a class="btn btn-primary btn-sm" href="${navUrl}" target="_blank" rel="noopener">🧭 นำทาง</a>` : ''}
+      <a class="btn btn-outline btn-sm" href="tel:${order.customerPhone}">📞 โทร</a>
     </div>
   `;
 
@@ -1701,6 +1762,7 @@ function showReceipt(orderId) {
         <div><span>เบอร์โทร</span><strong>${order.customerPhone}</strong></div>
         <div><span>วิธีรับ</span><strong>${order.deliveryType === 'delivery' ? 'จัดส่ง' : 'รับที่ร้าน'}</strong></div>
         ${order.deliveryLocation ? `<div><span>ที่อยู่</span><strong>${order.deliveryLocation}</strong></div>` : ''}
+        ${order.deliveryType === 'pickup' && order.pickupTime ? `<div><span>เวลารับ</span><strong>${formatPickupTime(order.pickupTime)}</strong></div>` : ''}
         <div><span>สถานะ</span><strong>${STATUS_LABELS[order.status] || order.status}</strong></div>
       </div>
       <table class="receipt-table">
@@ -2095,10 +2157,9 @@ function startRealtimeSync() {
       }
       // If track modal is open and has a result, refresh it
       const trackResult = document.getElementById('track-result');
-      const trackInput = document.getElementById('track-order-id');
       const trackPhone = document.getElementById('track-phone');
       if (trackResult && trackResult.style.display !== 'none' &&
-          trackInput?.value.trim() && trackPhone?.value.trim()) {
+          trackPhone?.value.trim()) {
         searchOrder();
       }
     }
@@ -2144,10 +2205,9 @@ function startTrackPolling() {
   // Poll every 2s while track result is visible
   trackPollingTimer = setInterval(() => {
     const trackResult = document.getElementById('track-result');
-    const trackInput = document.getElementById('track-order-id');
     const trackPhone = document.getElementById('track-phone');
     if (trackResult && trackResult.style.display !== 'none' &&
-        trackInput?.value.trim() && trackPhone?.value.trim()) {
+        trackPhone?.value.trim()) {
       searchOrder();
     }
   }, 1500);
@@ -2161,7 +2221,7 @@ function stopTrackPolling() {
 }
 
 
-// ===== Track Order (Buyer) =====
+// ===== Track Order (Buyer) — ค้นด้วยเบอร์โทร แสดงออเดอร์ทั้งหมด =====
 function normalizePhone(phone) {
   return String(phone || '').replace(/\D/g, '');
 }
@@ -2180,11 +2240,43 @@ function getQueuePosition(order) {
   return idx; // 0 = ถึงคิวแล้ว, 1 = เหลือ 1 คิวก่อนหน้า ฯลฯ
 }
 
+const TRACK_STATUS_MAP = {
+  pending: {
+    icon: '⏳',
+    label: 'รอทำ',
+    desc: 'ร้านค้ารับออเดอร์แล้ว กำลังเตรียมเริ่มทำ',
+    step: 1
+  },
+  preparing: {
+    icon: '👨‍🍳',
+    label: 'กำลังทำ',
+    desc: 'กำลังชงเครื่องดื่ม / เตรียมสินค้าให้คุณ',
+    step: 2
+  },
+  shipping: {
+    icon: '🛵',
+    label: 'กำลังจัดส่ง',
+    desc: 'กำลังจัดส่งไปยังจุดที่ระบุ',
+    step: 3
+  },
+  completed: {
+    icon: '✅',
+    label: 'เสร็จแล้ว',
+    desc: 'จัดส่งเรียบร้อย ขอบคุณที่อุดหนุน!',
+    step: 4
+  },
+  cancelled: {
+    icon: '❌',
+    label: 'ยกเลิก',
+    desc: 'ออเดอร์นี้ถูกยกเลิกแล้ว',
+    step: 0
+  }
+};
+
 function openTrack() {
-  document.getElementById('track-order-id').value = '';
-  const phoneEl = document.getElementById('track-phone');
-  if (phoneEl) phoneEl.value = '';
-  document.getElementById('track-result').style.display = 'none';
+  // ไม่ล้างเบอร์ถ้ามีค่าอยู่แล้ว (เช่น หลังสั่งซื้อ)
+  const resultEl = document.getElementById('track-result');
+  if (resultEl) resultEl.style.display = 'none';
   document.getElementById('track-modal')?.classList.add('show');
   startTrackPolling();
 }
@@ -2194,84 +2286,12 @@ function closeTrack() {
   stopTrackPolling();
 }
 
-function searchOrder() {
-  const orderId = document.getElementById('track-order-id')?.value.trim();
-  const phone = document.getElementById('track-phone')?.value.trim() || '';
-  const resultEl = document.getElementById('track-result');
-  if (!resultEl) return;
-
-  if (!orderId || !phone) {
-    resultEl.style.display = 'block';
-    resultEl.innerHTML = `
-      <div class="track-not-found">
-        <div class="icon">🔍</div>
-        <p>กรุณากรอกหมายเลขออเดอร์และเบอร์โทร</p>
-      </div>`;
-    return;
-  }
-
-  const orders = getOrders();
-  const order = orders.find(o => o.id.toLowerCase() === orderId.toLowerCase());
-
-  resultEl.style.display = 'block';
-
-  if (!order) {
-    resultEl.innerHTML = `
-      <div class="track-not-found">
-        <div class="icon">😕</div>
-        <p>ไม่พบออเดอร์นี้<br><small>กรุณาตรวจสอบหมายเลขและเบอร์โทรอีกครั้ง</small></p>
-      </div>`;
-    return;
-  }
-
-  // ตรวจสอบว่าเป็นออเดอร์ของเบอร์นี้จริง
-  if (normalizePhone(order.customerPhone) !== normalizePhone(phone)) {
-    resultEl.innerHTML = `
-      <div class="track-not-found">
-        <div class="icon">🔒</div>
-        <p>ไม่สามารถดูออเดอร์นี้ได้<br><small>เบอร์โทรไม่ตรงกับที่ใช้สั่งซื้อ</small></p>
-      </div>`;
-    return;
-  }
-
-  const statusMap = {
-    pending: {
-      icon: '⏳',
-      label: 'รอทำ',
-      desc: 'ร้านค้ารับออเดอร์แล้ว กำลังเตรียมเริ่มทำ',
-      step: 1
-    },
-    preparing: {
-      icon: '👨‍🍳',
-      label: 'กำลังทำ',
-      desc: 'กำลังชงเครื่องดื่ม / เตรียมสินค้าให้คุณ',
-      step: 2
-    },
-    shipping: {
-      icon: '🛵',
-      label: 'กำลังจัดส่ง',
-      desc: 'กำลังจัดส่งไปยังจุดที่ระบุ',
-      step: 3
-    },
-    completed: {
-      icon: '✅',
-      label: 'เสร็จแล้ว',
-      desc: 'จัดส่งเรียบร้อย ขอบคุณที่อุดหนุน!',
-      step: 4
-    },
-    cancelled: {
-      icon: '❌',
-      label: 'ยกเลิก',
-      desc: 'ออเดอร์นี้ถูกยกเลิกแล้ว',
-      step: 0
-    }
-  };
-
-  const st = statusMap[order.status] || statusMap.pending;
+/** สร้างการ์ดสถานะออเดอร์ 1 ใบ */
+function renderTrackOrderCard(order) {
+  const st = TRACK_STATUS_MAP[order.status] || TRACK_STATUS_MAP.pending;
   const isCancelled = order.status === 'cancelled';
   const isDone = order.status === 'completed' || isCancelled;
 
-  // คำนวณคิว
   const queueAhead = getQueuePosition(order);
   let queueHtml = '';
   if (!isDone) {
@@ -2307,15 +2327,12 @@ function searchOrder() {
       </div>`;
   }
 
-  const itemsHtml = order.items.map(i =>
+  const itemsHtml = (order.items || []).map(i =>
     `<div class="track-info-row"><span>${i.name} × ${i.qty}${i.note ? ' <small style="color:var(--primary-light);">(📝 '+i.note+')</small>' : ''}</span><span>${formatPrice(i.price * i.qty)} ฿</span></div>`
   ).join('');
 
-  const now = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-  resultEl.innerHTML = `
-    <div class="track-status-card">
-      <div class="track-live-badge">🔴 สด · อัปเดต ${now}</div>
+  return `
+    <div class="track-status-card" data-order-id="${order.id}">
       ${queueHtml}
       <div class="track-status-icon">${st.icon}</div>
       <div class="track-status-label" style="color: ${isCancelled ? 'var(--danger)' : 'var(--primary)'}">${st.label}</div>
@@ -2326,6 +2343,7 @@ function searchOrder() {
         <div class="track-info-row"><span>ลูกค้า</span><strong>${order.customerName}</strong></div>
         <div class="track-info-row"><span>วิธีรับ</span><strong>${order.deliveryType === 'delivery' ? '🛵 จัดส่ง' : '🏪 รับที่ร้าน'}</strong></div>
         ${order.deliveryLocation ? `<div class="track-info-row"><span>ที่อยู่</span><strong>📍 ${order.deliveryLocation}${order.deliveryLat && order.deliveryLng ? ` <a href="https://www.google.com/maps?q=${order.deliveryLat},${order.deliveryLng}" target="_blank" rel="noopener" class="maps-link">แผนที่↗</a>` : ''}</strong></div>` : ''}
+        ${order.deliveryType === 'pickup' && order.pickupTime ? `<div class="track-info-row"><span>เวลารับ</span><strong>⏰ ${formatPickupTime(order.pickupTime)}</strong></div>` : ''}
         <div class="track-info-row"><span>เวลาสั่ง</span><strong>${formatDate(order.createdAt)}</strong></div>
         ${order.note ? `<div class="track-info-row"><span>หมายเหตุ</span><strong>${order.note}</strong></div>` : ''}
         <div style="margin-top:0.6rem; padding-top:0.5rem; border-top:1px dashed var(--border);">
@@ -2336,6 +2354,67 @@ function searchOrder() {
           </div>
         </div>
       </div>
+    </div>`;
+}
+
+function searchOrder() {
+  const phone = document.getElementById('track-phone')?.value.trim() || '';
+  const resultEl = document.getElementById('track-result');
+  if (!resultEl) return;
+
+  if (!phone) {
+    resultEl.style.display = 'block';
+    resultEl.innerHTML = `
+      <div class="track-not-found">
+        <div class="icon">🔍</div>
+        <p>กรุณากรอกเบอร์โทรที่ใช้สั่งซื้อ</p>
+      </div>`;
+    return;
+  }
+
+  const norm = normalizePhone(phone);
+  if (norm.length < 9) {
+    resultEl.style.display = 'block';
+    resultEl.innerHTML = `
+      <div class="track-not-found">
+        <div class="icon">📱</div>
+        <p>กรุณากรอกเบอร์โทรให้ครบ</p>
+      </div>`;
+    return;
+  }
+
+  const orders = getOrders()
+    .filter(o => normalizePhone(o.customerPhone) === norm)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)); // ใหม่สุดก่อน
+
+  resultEl.style.display = 'block';
+
+  if (orders.length === 0) {
+    resultEl.innerHTML = `
+      <div class="track-not-found">
+        <div class="icon">😕</div>
+        <p>ไม่พบออเดอร์ของเบอร์นี้<br><small>ตรวจสอบเบอร์โทรอีกครั้ง หรือยังไม่ได้สั่งซื้อ</small></p>
+      </div>`;
+    return;
+  }
+
+  const now = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const activeCount = orders.filter(o =>
+    o.status === 'pending' || o.status === 'preparing' || o.status === 'shipping'
+  ).length;
+
+  const cardsHtml = orders.map(o => renderTrackOrderCard(o)).join('');
+
+  resultEl.innerHTML = `
+    <div class="track-list-header">
+      <div class="track-live-badge">🔴 สด · อัปเดต ${now}</div>
+      <div class="track-list-summary">
+        พบ <strong>${orders.length}</strong> ออเดอร์
+        ${activeCount > 0 ? `· กำลังดำเนินการ <strong>${activeCount}</strong>` : ''}
+      </div>
+    </div>
+    <div class="track-orders-list">
+      ${cardsHtml}
     </div>`;
 }
 
@@ -2384,10 +2463,9 @@ function initBuyer() {
     subscribeOrders(() => {
       // อัปเดตหน้าติดตามถ้าเปิดอยู่
       const trackResult = document.getElementById('track-result');
-      const trackInput = document.getElementById('track-order-id');
       const trackPhone = document.getElementById('track-phone');
       if (trackResult && trackResult.style.display !== 'none' &&
-          trackInput?.value.trim() && trackPhone?.value.trim()) {
+          trackPhone?.value.trim()) {
         searchOrder();
       }
     });
@@ -2418,15 +2496,18 @@ function initBuyer() {
   });
   document.getElementById('pin-location-btn')?.addEventListener('click', pinLocationOnMaps);
   document.getElementById('clear-pin-btn')?.addEventListener('click', clearPinnedLocation);
+  document.querySelectorAll('.pickup-quick').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mins = Number(btn.dataset.mins || 0);
+      setPickupTimeFromNow(mins);
+    });
+  });
   document.getElementById('track-from-success')?.addEventListener('click', () => {
-    const oid = document.getElementById('order-id-display')?.textContent || '';
     closeSuccess();
     openTrack();
-    const input = document.getElementById('track-order-id');
-    if (input) {
-      input.value = oid;
-      searchOrder();
-    }
+    // ถ้ามีเบอร์ในช่องแล้ว ให้ค้นทันที
+    const phoneInput = document.getElementById('track-phone');
+    if (phoneInput?.value.trim()) searchOrder();
   });
 
   // Note modal (add to cart)
@@ -2458,15 +2539,18 @@ function initBuyer() {
     });
   });
 
-  // Track order
+  // Track order (ค้นด้วยเบอร์โทร)
   document.getElementById('track-btn')?.addEventListener('click', (e) => {
     e.preventDefault();
     openTrack();
   });
   document.getElementById('close-track')?.addEventListener('click', closeTrack);
   document.getElementById('track-search-btn')?.addEventListener('click', searchOrder);
-  document.getElementById('track-order-id')?.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') searchOrder();
+  document.getElementById('track-phone')?.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      searchOrder();
+    }
   });
 
   // Real-time sync
