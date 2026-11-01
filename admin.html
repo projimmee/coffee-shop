@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>👨‍💼 ผู้ขาย - Coffee Shop</title>
-  <link rel="stylesheet" href="style.css?v=20261101fix1" />
+  <link rel="stylesheet" href="style.css?v=20261101final" />
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -24,21 +24,46 @@
   <!-- Login Screen -->
   <div id="login-screen" class="login-screen">
     <div class="login-box">
-      <h2>🔐 เข้าสู่ระบบผู้ขาย</h2>
-      <p>รหัสผ่านเริ่มต้น: <code>admin123</code></p>
-      <div class="form-group">
-        <input type="password" id="admin-password" placeholder="รหัสผ่าน" />
-      </div>
-      <button id="login-btn" class="btn btn-primary btn-block">เข้าสู่ระบบ</button>
-      <p id="login-error" class="error-text" style="display:none;">รหัสผ่านไม่ถูกต้อง</p>
+      <div class="login-logo">☕</div>
+      <h2>เข้าสู่ระบบผู้ขาย</h2>
+      <p class="login-subtitle">Coffee Shop Admin</p>
+      <form id="login-form" autocomplete="on">
+        <div class="form-group login-field">
+          <label for="admin-username">ชื่อผู้ใช้</label>
+          <div class="input-with-icon">
+            <span class="input-icon">👤</span>
+            <input type="text" id="admin-username" name="username" placeholder="ชื่อผู้ใช้" autocomplete="username" required />
+          </div>
+        </div>
+        <div class="form-group login-field">
+          <label for="admin-password">รหัสผ่าน</label>
+          <div class="input-with-icon">
+            <span class="input-icon">🔑</span>
+            <input type="password" id="admin-password" name="password" placeholder="รหัสผ่าน" autocomplete="current-password" required />
+            <button type="button" class="toggle-pw-btn" id="toggle-pw-btn" title="แสดง/ซ่อนรหัสผ่าน" aria-label="แสดงรหัสผ่าน">👁</button>
+          </div>
+        </div>
+        <div class="login-options">
+          <label class="remember-me">
+            <input type="checkbox" id="remember-me" />
+            <span>จดจำการเข้าสู่ระบบ (7 วัน)</span>
+          </label>
+        </div>
+        <button type="submit" id="login-btn" class="btn btn-primary btn-block">เข้าสู่ระบบ</button>
+      </form>
+      <p id="login-error" class="error-text" style="display:none;" role="alert"></p>
+      <p id="login-hint" class="login-hint">ค่าเริ่มต้น: <code>admin</code> / <code>admin123</code></p>
     </div>
   </div>
 
   <!-- Admin Dashboard -->
   <div id="admin-dashboard" style="display:none;">
     <div class="admin-header">
-      <h1>แดชบอร์ดผู้ขาย</h1>
-      <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
+      <div>
+        <h1>แดชบอร์ดผู้ขาย</h1>
+        <p id="admin-welcome" class="admin-welcome"></p>
+      </div>
+      <div style="display:flex; gap:0.6rem; flex-wrap:wrap; align-items:center;">
         <button id="reset-all-btn" class="btn btn-danger btn-sm">🗑️ รีเซ็ตออเดอร์</button>
         <button id="logout-btn" class="btn btn-outline">ออกจากระบบ</button>
       </div>
@@ -193,6 +218,33 @@
       </div>
 
       <div class="form-card" style="margin-bottom:1.5rem;">
+        <h2>🔐 บัญชีผู้ขาย</h2>
+        <p style="color:var(--text-muted); font-size:0.92rem; margin-bottom:0.9rem;">
+          เปลี่ยนชื่อผู้ใช้และรหัสผ่านสำหรับเข้าแดชบอร์ด
+        </p>
+        <form id="change-password-form">
+          <div class="form-group">
+            <label>ชื่อผู้ใช้ใหม่</label>
+            <input type="text" id="new-username" placeholder="เช่น admin" autocomplete="username" />
+          </div>
+          <div class="form-group">
+            <label>รหัสผ่านปัจจุบัน *</label>
+            <input type="password" id="current-password" required placeholder="รหัสผ่านที่ใช้เข้าสู่ระบบตอนนี้" autocomplete="current-password" />
+          </div>
+          <div class="form-group">
+            <label>รหัสผ่านใหม่ *</label>
+            <input type="password" id="new-password" required minlength="6" placeholder="อย่างน้อย 6 ตัวอักษร" autocomplete="new-password" />
+          </div>
+          <div class="form-group">
+            <label>ยืนยันรหัสผ่านใหม่ *</label>
+            <input type="password" id="confirm-password" required minlength="6" placeholder="พิมพ์รหัสผ่านใหม่อีกครั้ง" autocomplete="new-password" />
+          </div>
+          <button type="submit" class="btn btn-primary btn-block" id="change-pw-btn">บันทึกบัญชี</button>
+          <p id="change-pw-msg" class="form-msg" style="display:none;"></p>
+        </form>
+      </div>
+
+      <div class="form-card" style="margin-bottom:1.5rem;">
         <h2>🏪 สถานะร้าน</h2>
         <p style="color:var(--text-muted); font-size:0.92rem; margin-bottom:0.75rem;">
           เมื่อปิดร้าน ลูกค้าจะเห็นข้อความ “ร้านปิด” และไม่สามารถสั่งซื้อได้
@@ -255,7 +307,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20261101fix1"></script>
+  <script src="app.js?v=20261101final"></script>
   <script>
     // Admin specific init
     document.addEventListener('DOMContentLoaded', () => {

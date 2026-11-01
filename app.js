@@ -1,13 +1,9 @@
 // ===== Coffee Shop Management System =====
-// Pure HTML/CSS/JS + localStorage
+// Pure HTML/CSS/JS + Firebase (products/orders/settings)
+// ตะกร้าเก็บใน sessionStorage (เฉพาะเครื่องนี้)
 
 const STORAGE_KEYS = {
-  products: 'coffee_products',
-  orders: 'coffee_orders',
-  cart: 'coffee_cart',
-  adminAuth: 'coffee_admin_auth',
-  promptpay: 'coffee_promptpay',
-  shopClosed: 'coffee_shop_closed'
+  cart: 'coffee_cart'
 };
 
 const DEFAULT_PRODUCTS = [
@@ -98,40 +94,23 @@ function generateId(prefix = 'id') {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
-// หมายเลขออเดอร์รัน 0-999 แล้ววนกลับ
-// โหมด local: ใช้ localStorage
-// โหมด Firebase: ใช้ตัวนับใน Firestore settings/orderCounter (atomic)
-function getNextOrderNumberLocal() {
-  let counter = parseInt(localStorage.getItem('coffee_order_counter') || '0', 10);
-  const num = counter;
-  counter = (counter + 1) % 1000;
-  localStorage.setItem('coffee_order_counter', String(counter));
-  return String(num).padStart(3, '0');
-}
-
+// หมายเลขออเดอร์รัน 0-999 — ใช้ Firestore settings/orderCounter เท่านั้น
 async function getNextOrderNumber() {
   if (!firebaseReady || !db) {
-    return getNextOrderNumberLocal();
+    throw new Error('ต้องเชื่อม Firebase ก่อนจึงสั่งซื้อได้');
   }
-  try {
-    const ref = db.collection('settings').doc('orderCounter');
-    const nextNum = await db.runTransaction(async (tx) => {
-      const snap = await tx.get(ref);
-      let current = 0;
-      if (snap.exists) {
-        current = parseInt(snap.data().value, 10) || 0;
-      }
-      const next = (current + 1) % 1000;
-      tx.set(ref, { value: next, updatedAt: new Date().toISOString() }, { merge: true });
-      return current;
-    });
-    const id = String(nextNum).padStart(3, '0');
-    localStorage.setItem('coffee_order_counter', String((nextNum + 1) % 1000));
-    return id;
-  } catch (e) {
-    console.warn('getNextOrderNumber Firebase failed, fallback local:', e);
-    return getNextOrderNumberLocal();
-  }
+  const ref = db.collection('settings').doc('orderCounter');
+  const nextNum = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    let current = 0;
+    if (snap.exists) {
+      current = parseInt(snap.data().value, 10) || 0;
+    }
+    const next = (current + 1) % 1000;
+    tx.set(ref, { value: next, updatedAt: new Date().toISOString() }, { merge: true });
+    return current;
+  });
+  return String(nextNum).padStart(3, '0');
 }
 
 function formatPrice(n) {
@@ -214,7 +193,7 @@ function renderCategoryFilters() {
   });
 }
 
-// ===== Storage (localStorage + Firebase) =====
+// ===== Storage (Firebase + memory cache) =====
 let db = null;
 let storageRef = null;
 let firebaseReady = false;
@@ -239,24 +218,24 @@ function updateFirebaseStatusUI(ok, detail) {
     }
   } else {
     if (live) {
-      live.innerHTML = '<span class="live-dot local"></span> โหมดเครื่องนี้';
+      live.innerHTML = '<span class="live-dot local"></span> รอ Firebase';
       live.classList.add('is-local');
       live.classList.remove('is-firebase');
     }
-    if (sync) sync.textContent = detail || 'ใช้ localStorage';
+    if (sync) sync.textContent = detail || 'ยังไม่เชื่อม Firebase';
     if (badge) {
-      badge.textContent = '💾 Local';
+      badge.textContent = '⚠ Offline';
       badge.className = 'firebase-status-badge is-off';
-      badge.title = 'ยังไม่เชื่อม Firebase — ข้อมูลอยู่บนเครื่องนี้เท่านั้น';
+      badge.title = 'ยังไม่เชื่อม Firebase — ต้องเชื่อมเพื่อใช้งาน';
     }
   }
 }
 
 function initFirebase() {
   if (typeof firebase === 'undefined' || typeof USE_FIREBASE === 'undefined' || !USE_FIREBASE) {
-    console.log('[Storage] ใช้ localStorage (ยังไม่เปิด Firebase)');
+    console.warn('[Storage] ต้องเปิด USE_FIREBASE = true');
     firebaseReady = false;
-    updateFirebaseStatusUI(false, 'ใช้ localStorage');
+    updateFirebaseStatusUI(false, 'ยังไม่เปิด Firebase');
     return false;
   }
   try {
@@ -331,7 +310,7 @@ function formatStorageError(e) {
  * @returns {Promise<string>} download URL หรือ dataUrl เดิมถ้าอัปโหลดไม่ได้
  */
 async function uploadImageToFirebase(path, dataUrl) {
-  // ปิด Firebase Storage ถาวร — เก็บ base64 ใน Firestore/localStorage เท่านั้น
+  // ปิด Firebase Storage ถาวร — เก็บ base64 ใน Firestore เท่านั้น
   console.log('[Upload] ข้าม Firebase Storage (ใช้ base64 ใน DB)');
   return dataUrl || '';
 }
@@ -341,136 +320,101 @@ async function ensureRemoteImageUrl(dataUrlOrUrl, storagePath) {
   return dataUrlOrUrl || '';
 }
 
-// --- Products ---
+// --- Products (Firebase + memory cache) ---
 function getProducts() {
   if (productsCache) return productsCache;
-  const data = localStorage.getItem(STORAGE_KEYS.products);
-  if (!data) {
-    localStorage.setItem(STORAGE_KEYS.products, JSON.stringify(DEFAULT_PRODUCTS));
-    productsCache = [...DEFAULT_PRODUCTS];
-    return productsCache;
-  }
-  productsCache = JSON.parse(data);
-  return productsCache;
+  return [...DEFAULT_PRODUCTS];
 }
 
 async function saveProducts(products) {
   productsCache = products;
-  localStorage.setItem(STORAGE_KEYS.products, JSON.stringify(products));
-  if (firebaseReady && db) {
-    try {
-      // บันทึกทีละชิ้นด้วย id เป็น document id
-      const batch = db.batch();
-      const col = db.collection('products');
-      // ลบของเก่าแล้วเขียนใหม่แบบง่าย (สำหรับร้านเล็ก)
-      const snap = await col.get();
-      snap.docs.forEach(doc => batch.delete(doc.ref));
-      products.forEach(p => {
-        batch.set(col.doc(p.id), p);
-      });
-      await batch.commit();
-    } catch (e) {
-      console.error('saveProducts Firebase:', e);
-    }
+  if (!firebaseReady || !db) {
+    console.warn('saveProducts: Firebase ยังไม่พร้อม');
+    return;
+  }
+  try {
+    const batch = db.batch();
+    const col = db.collection('products');
+    const snap = await col.get();
+    snap.docs.forEach(doc => batch.delete(doc.ref));
+    products.forEach(p => {
+      batch.set(col.doc(p.id), p);
+    });
+    await batch.commit();
+  } catch (e) {
+    console.error('saveProducts Firebase:', e);
+    throw e;
   }
 }
 
 async function loadProductsFromFirebase() {
-  if (!firebaseReady || !db) return getProducts();
+  if (!firebaseReady || !db) {
+    productsCache = [...DEFAULT_PRODUCTS];
+    return productsCache;
+  }
   try {
     const snap = await db.collection('products').get();
     if (snap.empty) {
-      // ครั้งแรก: seed ข้อมูลเริ่มต้นขึ้น Firebase
       await saveProducts(DEFAULT_PRODUCTS);
       productsCache = [...DEFAULT_PRODUCTS];
       return productsCache;
     }
     const products = snap.docs.map(d => d.data());
     productsCache = products;
-    localStorage.setItem(STORAGE_KEYS.products, JSON.stringify(products));
     return products;
   } catch (e) {
     console.error('loadProductsFromFirebase:', e);
-    return getProducts();
+    productsCache = productsCache || [...DEFAULT_PRODUCTS];
+    return productsCache;
   }
 }
 
-// --- Orders ---
+// --- Orders (Firebase + memory cache) ---
 function getOrders() {
-  // ถ้ามี cache จาก Firebase/local ใช้ก่อน ถ้ายังว่าง ลองอ่าน localStorage
-  if (Array.isArray(ordersCache) && ordersCache.length > 0) {
-    return ordersCache;
-  }
-  try {
-    const data = localStorage.getItem(STORAGE_KEYS.orders);
-    const parsed = data ? JSON.parse(data) : [];
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      ordersCache = parsed;
-      return parsed;
-    }
-  } catch (e) {
-    console.warn('getOrders localStorage error:', e);
-  }
   return Array.isArray(ordersCache) ? ordersCache : [];
 }
 
 async function saveOrders(orders) {
-  // ใช้เฉพาะ local fallback — Firebase บันทึกทีละ order
   ordersCache = orders;
-  localStorage.setItem(STORAGE_KEYS.orders, JSON.stringify(orders));
 }
 
 async function addOrderToFirebase(order) {
-  // อัปเดต cache + localStorage ทันที ก่อนยิง Firebase
-  // เพื่อให้หน้าติดตามเห็นออเดอร์ใหม่ทันที
-  let orders = [];
-  try {
-    const data = localStorage.getItem(STORAGE_KEYS.orders);
-    orders = data ? JSON.parse(data) : [];
-    if (!Array.isArray(orders)) orders = [];
-  } catch (e) {
-    orders = Array.isArray(ordersCache) ? ordersCache.slice() : [];
-  }
-  // กันซ้ำ
+  let orders = Array.isArray(ordersCache) ? ordersCache.slice() : [];
   orders = orders.filter(o => o && o.id !== order.id);
   orders.unshift(order);
   ordersCache = orders;
-  try {
-    localStorage.setItem(STORAGE_KEYS.orders, JSON.stringify(orders));
-  } catch (e) {
-    console.warn('save order localStorage failed:', e);
-  }
 
   if (!firebaseReady || !db) {
-    return;
+    throw new Error('ต้องเชื่อม Firebase ก่อนจึงสั่งซื้อได้');
   }
   try {
     await db.collection('orders').doc(order.id).set(order);
   } catch (e) {
     console.error('addOrderToFirebase:', e);
-    // เก็บ local ไว้แล้ว ไม่ต้องทำซ้ำ
+    throw e;
   }
 }
 
 async function updateOrderInFirebase(orderId, data) {
+  const orders = getOrders();
+  const o = orders.find(x => x.id === orderId);
+  if (o) Object.assign(o, data);
+  ordersCache = orders;
+
   if (!firebaseReady || !db) {
-    const orders = getOrders();
-    const o = orders.find(x => x.id === orderId);
-    if (o) Object.assign(o, data);
-    localStorage.setItem(STORAGE_KEYS.orders, JSON.stringify(orders));
-    ordersCache = orders;
+    console.warn('updateOrderInFirebase: Firebase ยังไม่พร้อม');
     return;
   }
   try {
     await db.collection('orders').doc(orderId).update(data);
   } catch (e) {
     console.error('updateOrderInFirebase:', e);
+    throw e;
   }
 }
 
 function subscribeOrders(callback) {
   if (!firebaseReady || !db) {
-    // local mode: ไม่มี real-time ข้ามเครื่อง
     callback(getOrders());
     return () => {};
   }
@@ -479,9 +423,6 @@ function subscribeOrders(callback) {
     .onSnapshot(snap => {
       const orders = snap.docs.map(d => d.data());
       ordersCache = orders;
-      try {
-        localStorage.setItem(STORAGE_KEYS.orders, JSON.stringify(orders));
-      } catch (e) { /* quota */ }
       updateFirebaseStatusUI(true, `อัปเดต ${new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`);
       callback(orders);
     }, err => {
@@ -498,29 +439,19 @@ function subscribeProducts(callback) {
   return db.collection('products').onSnapshot(snap => {
     const products = snap.docs.map(d => d.data());
     productsCache = products;
-    localStorage.setItem(STORAGE_KEYS.products, JSON.stringify(products));
     callback(products);
   }, err => console.error('subscribeProducts:', err));
 }
 
 // --- สถานะร้าน (เปิด/ปิด) ---
-let shopClosedCache = null;
+let shopClosedCache = false;
 
 function isShopClosed() {
-  if (shopClosedCache !== null) return shopClosedCache;
-  try {
-    shopClosedCache = localStorage.getItem(STORAGE_KEYS.shopClosed) === '1';
-  } catch (e) {
-    shopClosedCache = false;
-  }
-  return shopClosedCache;
+  return !!shopClosedCache;
 }
 
 async function setShopClosed(closed) {
   shopClosedCache = !!closed;
-  try {
-    localStorage.setItem(STORAGE_KEYS.shopClosed, closed ? '1' : '0');
-  } catch (e) { /* ignore */ }
 
   if (firebaseReady && db) {
     try {
@@ -550,9 +481,6 @@ async function loadShopStatusFromFirebase() {
     const doc = await db.collection('settings').doc('shop').get();
     if (doc.exists && typeof doc.data().closed === 'boolean') {
       shopClosedCache = doc.data().closed;
-      try {
-        localStorage.setItem(STORAGE_KEYS.shopClosed, shopClosedCache ? '1' : '0');
-      } catch (e) { /* ignore */ }
     }
   } catch (e) {
     console.error('loadShopStatusFromFirebase:', e);
@@ -568,9 +496,6 @@ function subscribeShopStatus() {
     if (doc.exists && typeof doc.data().closed === 'boolean') {
       const prev = shopClosedCache;
       shopClosedCache = doc.data().closed;
-      try {
-        localStorage.setItem(STORAGE_KEYS.shopClosed, shopClosedCache ? '1' : '0');
-      } catch (e) { /* ignore */ }
       updateShopClosedUI();
       updateAdminShopToggleUI();
       if (prev !== shopClosedCache && document.getElementById('product-grid')) {
@@ -660,14 +585,22 @@ async function toggleShopClosed() {
   alert(next ? 'ปิดร้านแล้ว' : 'เปิดร้านแล้ว');
 }
 
-// --- Cart (เก็บ local เสมอ — คนละเครื่องคนละตะกร้า) ---
+// --- Cart (sessionStorage — คนละเครื่องคนละตะกร้า) ---
 function getCart() {
-  const data = localStorage.getItem(STORAGE_KEYS.cart);
-  return data ? JSON.parse(data) : [];
+  try {
+    const data = sessionStorage.getItem(STORAGE_KEYS.cart);
+    return data ? JSON.parse(data) : [];
+  } catch (e) {
+    return [];
+  }
 }
 
 function saveCart(cart) {
-  localStorage.setItem(STORAGE_KEYS.cart, JSON.stringify(cart));
+  try {
+    sessionStorage.setItem(STORAGE_KEYS.cart, JSON.stringify(cart));
+  } catch (e) {
+    console.warn('saveCart failed:', e);
+  }
 }
 
 // ===== Buyer: Products =====
@@ -1211,35 +1144,286 @@ function closeSuccess() {
   document.getElementById('success-modal')?.classList.remove('show');
 }
 
-// ===== Admin =====
-function isAdminLoggedIn() {
-  return localStorage.getItem(STORAGE_KEYS.adminAuth) === 'true';
+// ===== Admin Auth =====
+const DEFAULT_ADMIN = { username: 'admin', password: 'admin123' };
+const SESSION_KEY = 'coffee_admin_session';
+const FAIL_KEY = 'coffee_admin_fail';
+const MAX_FAIL = 5;
+const LOCK_MS = 60 * 1000;
+const SESSION_MS_SHORT = 8 * 60 * 60 * 1000;
+const SESSION_MS_LONG = 7 * 24 * 60 * 60 * 1000;
+
+let adminCredsCache = null;
+
+async function hashPassword(text) {
+  const enc = new TextEncoder().encode(String(text));
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-function loginAdmin() {
-  const pw = document.getElementById('admin-password')?.value;
-  if (pw === 'admin123') {
-    localStorage.setItem(STORAGE_KEYS.adminAuth, 'true');
-    showAdminDashboard();
-  } else {
-    const err = document.getElementById('login-error');
-    if (err) {
-      err.style.display = 'block';
-      setTimeout(() => err.style.display = 'none', 2500);
+async function getDefaultPasswordHash() {
+  return hashPassword(DEFAULT_ADMIN.password);
+}
+
+async function loadAdminCreds() {
+  if (adminCredsCache) return adminCredsCache;
+  if (firebaseReady && db) {
+    try {
+      const doc = await db.collection('settings').doc('admin').get();
+      if (doc.exists && doc.data().username && doc.data().passwordHash) {
+        adminCredsCache = {
+          username: String(doc.data().username).trim(),
+          passwordHash: String(doc.data().passwordHash)
+        };
+        return adminCredsCache;
+      }
+    } catch (e) {
+      console.warn('loadAdminCreds:', e);
     }
+  }
+  adminCredsCache = {
+    username: DEFAULT_ADMIN.username,
+    passwordHash: await getDefaultPasswordHash()
+  };
+  return adminCredsCache;
+}
+
+async function saveAdminCreds(username, passwordPlain) {
+  const passwordHash = await hashPassword(passwordPlain);
+  adminCredsCache = { username: String(username).trim(), passwordHash };
+  if (firebaseReady && db) {
+    await db.collection('settings').doc('admin').set({
+      username: adminCredsCache.username,
+      passwordHash,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  }
+  return adminCredsCache;
+}
+
+function getFailState() {
+  try {
+    const raw = sessionStorage.getItem(FAIL_KEY);
+    return raw ? JSON.parse(raw) : { count: 0, lockedUntil: 0 };
+  } catch (e) {
+    return { count: 0, lockedUntil: 0 };
+  }
+}
+
+function setFailState(state) {
+  try { sessionStorage.setItem(FAIL_KEY, JSON.stringify(state)); } catch (e) {}
+}
+
+function clearFailState() {
+  try { sessionStorage.removeItem(FAIL_KEY); } catch (e) {}
+}
+
+function readSession() {
+  for (const store of [sessionStorage, localStorage]) {
+    try {
+      const raw = store.getItem(SESSION_KEY);
+      if (!raw) continue;
+      const s = JSON.parse(raw);
+      if (s && s.ok && s.exp && Date.now() < s.exp) return { ...s, store };
+      store.removeItem(SESSION_KEY);
+    } catch (e) {}
+  }
+  return null;
+}
+
+function writeSession(username, remember) {
+  const exp = Date.now() + (remember ? SESSION_MS_LONG : SESSION_MS_SHORT);
+  const payload = JSON.stringify({ ok: true, username, exp, at: Date.now() });
+  try {
+    if (remember) {
+      localStorage.setItem(SESSION_KEY, payload);
+      sessionStorage.removeItem(SESSION_KEY);
+    } else {
+      sessionStorage.setItem(SESSION_KEY, payload);
+      localStorage.removeItem(SESSION_KEY);
+    }
+  } catch (e) { console.warn('writeSession:', e); }
+}
+
+function clearSession() {
+  try {
+    sessionStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(SESSION_KEY);
+  } catch (e) {}
+}
+
+function isAdminLoggedIn() {
+  return !!readSession();
+}
+
+function getLoggedInUsername() {
+  const s = readSession();
+  return s ? s.username : '';
+}
+
+function showLoginError(msg) {
+  const err = document.getElementById('login-error');
+  if (!err) return;
+  err.textContent = msg;
+  err.style.display = 'block';
+}
+
+function hideLoginError() {
+  const err = document.getElementById('login-error');
+  if (err) err.style.display = 'none';
+}
+
+function setLoginLoading(loading) {
+  const btn = document.getElementById('login-btn');
+  if (!btn) return;
+  btn.disabled = loading;
+  btn.textContent = loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ';
+}
+
+async function loginAdmin(e) {
+  if (e) e.preventDefault();
+  hideLoginError();
+
+  const fail = getFailState();
+  if (fail.lockedUntil && Date.now() < fail.lockedUntil) {
+    const sec = Math.ceil((fail.lockedUntil - Date.now()) / 1000);
+    showLoginError(`ลองผิดหลายครั้ง รออีก ${sec} วินาที`);
+    return;
+  }
+
+  const username = (document.getElementById('admin-username')?.value || '').trim();
+  const password = document.getElementById('admin-password')?.value || '';
+  const remember = !!document.getElementById('remember-me')?.checked;
+
+  if (!username || !password) {
+    showLoginError('กรุณากรอกชื่อผู้ใช้และรหัสผ่าน');
+    return;
+  }
+
+  setLoginLoading(true);
+  try {
+    if (!firebaseReady) initFirebase();
+    const creds = await loadAdminCreds();
+    const hash = await hashPassword(password);
+
+    if (username === creds.username && hash === creds.passwordHash) {
+      clearFailState();
+      writeSession(username, remember);
+      const pwEl = document.getElementById('admin-password');
+      if (pwEl) pwEl.value = '';
+      showAdminDashboard();
+      return;
+    }
+
+    const next = { count: (fail.count || 0) + 1, lockedUntil: 0 };
+    if (next.count >= MAX_FAIL) {
+      next.lockedUntil = Date.now() + LOCK_MS;
+      next.count = 0;
+      setFailState(next);
+      showLoginError(`รหัสผ่านไม่ถูกต้อง ล็อกชั่วคราว ${LOCK_MS / 1000} วินาที`);
+    } else {
+      setFailState(next);
+      showLoginError(`ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง (เหลือ ${MAX_FAIL - next.count} ครั้ง)`);
+    }
+  } catch (err) {
+    console.error('loginAdmin:', err);
+    showLoginError('เกิดข้อผิดพลาด กรุณาลองใหม่');
+  } finally {
+    setLoginLoading(false);
   }
 }
 
 function logoutAdmin() {
-  localStorage.removeItem(STORAGE_KEYS.adminAuth);
+  clearSession();
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('admin-dashboard').style.display = 'none';
   stopOrdersPolling();
+  const pw = document.getElementById('admin-password');
+  if (pw) pw.value = '';
+  hideLoginError();
+}
+
+function togglePasswordVisibility() {
+  const input = document.getElementById('admin-password');
+  const btn = document.getElementById('toggle-pw-btn');
+  if (!input) return;
+  const show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  if (btn) btn.textContent = show ? '🙈' : '👁';
+}
+
+async function handleChangePassword(e) {
+  if (e) e.preventDefault();
+  const msg = document.getElementById('change-pw-msg');
+  const btn = document.getElementById('change-pw-btn');
+  const showMsg = (text, ok) => {
+    if (!msg) return;
+    msg.textContent = text;
+    msg.className = 'form-msg ' + (ok ? 'is-ok' : 'is-err');
+    msg.style.display = 'block';
+  };
+
+  const currentPw = document.getElementById('current-password')?.value || '';
+  const newUser = (document.getElementById('new-username')?.value || '').trim();
+  const newPw = document.getElementById('new-password')?.value || '';
+  const confirmPw = document.getElementById('confirm-password')?.value || '';
+
+  if (!currentPw || !newPw || !confirmPw) {
+    showMsg('กรุณากรอกข้อมูลให้ครบ', false);
+    return;
+  }
+  if (newPw.length < 6) {
+    showMsg('รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร', false);
+    return;
+  }
+  if (newPw !== confirmPw) {
+    showMsg('รหัสผ่านใหม่กับยืนยันไม่ตรงกัน', false);
+    return;
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'กำลังบันทึก...'; }
+  try {
+    if (!firebaseReady) initFirebase();
+    const creds = await loadAdminCreds();
+    const currentHash = await hashPassword(currentPw);
+    if (currentHash !== creds.passwordHash) {
+      showMsg('รหัสผ่านปัจจุบันไม่ถูกต้อง', false);
+      return;
+    }
+    const username = newUser || creds.username;
+    if (!username) {
+      showMsg('ชื่อผู้ใช้ว่างไม่ได้', false);
+      return;
+    }
+    await saveAdminCreds(username, newPw);
+    const session = readSession();
+    writeSession(username, !!(session && session.store === localStorage));
+    updateAdminWelcome();
+    const hint = document.getElementById('login-hint');
+    if (hint) hint.style.display = 'none';
+    document.getElementById('current-password').value = '';
+    document.getElementById('new-password').value = '';
+    document.getElementById('confirm-password').value = '';
+    showMsg('บันทึกบัญชีเรียบร้อยแล้ว', true);
+  } catch (err) {
+    console.error('handleChangePassword:', err);
+    showMsg('บันทึกไม่สำเร็จ: ' + (err.message || err), false);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'บันทึกบัญชี'; }
+  }
+}
+
+function updateAdminWelcome() {
+  const el = document.getElementById('admin-welcome');
+  if (!el) return;
+  const name = getLoggedInUsername();
+  el.textContent = name ? `ยินดีต้อนรับ, ${name}` : '';
 }
 
 function showAdminDashboard() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('admin-dashboard').style.display = 'block';
+  updateAdminWelcome();
 
   initFirebase();
 
@@ -1299,21 +1483,11 @@ let previousOrderIds = new Set();
 let revenueClearedAt = null;
 
 function getRevenueClearedAt() {
-  if (revenueClearedAt) return revenueClearedAt;
-  try {
-    revenueClearedAt = localStorage.getItem('coffee_revenue_cleared_at') || null;
-  } catch (e) {
-    revenueClearedAt = null;
-  }
   return revenueClearedAt;
 }
 
 function setRevenueClearedAt(iso) {
-  revenueClearedAt = iso;
-  try {
-    if (iso) localStorage.setItem('coffee_revenue_cleared_at', iso);
-    else localStorage.removeItem('coffee_revenue_cleared_at');
-  } catch (e) { /* ignore */ }
+  revenueClearedAt = iso || null;
   if (firebaseReady && db) {
     db.collection('settings').doc('revenue').set({
       clearedAt: iso || null,
@@ -1327,7 +1501,7 @@ async function loadRevenueClearedAt() {
     try {
       const doc = await db.collection('settings').doc('revenue').get();
       if (doc.exists && doc.data().clearedAt) {
-        setRevenueClearedAt(doc.data().clearedAt);
+        revenueClearedAt = doc.data().clearedAt;
         return;
       }
     } catch (e) {
@@ -1777,10 +1951,12 @@ function renderRevenue() {
   }).join('');
 }
 
-function resetRevenue() {
+async function resetRevenue() {
   const pw = prompt('กรุณากรอกรหัสผ่านผู้ขายเพื่อรีเซ็ตรายได้:');
   if (pw === null) return;
-  if (pw !== 'admin123') {
+  const creds = await loadAdminCreds();
+  const hash = await hashPassword(pw);
+  if (hash !== creds.passwordHash) {
     alert('รหัสผ่านไม่ถูกต้อง');
     return;
   }
@@ -1793,13 +1969,10 @@ function resetRevenue() {
   alert('รีเซ็ตรายได้เรียบร้อยแล้ว\nยอดเริ่มนับใหม่จากออเดอร์ที่เสร็จหลังจากนี้');
 }
 
+let promptPayCache = '';
+
 function getPromptPayImage() {
-  try {
-    return localStorage.getItem(STORAGE_KEYS.promptpay) || '';
-  } catch (e) {
-    console.error('getPromptPayImage:', e);
-    return '';
-  }
+  return promptPayCache || '';
 }
 
 async function loadPromptPayFromFirebase() {
@@ -1811,9 +1984,7 @@ async function loadPromptPayFromFirebase() {
     const doc = await db.collection('settings').doc('promptpay').get();
     if (doc.exists && doc.data().imageUrl) {
       const url = doc.data().imageUrl;
-      try {
-        localStorage.setItem(STORAGE_KEYS.promptpay, url);
-      } catch (e) { /* URL สั้น ปกติไม่เต็ม */ }
+      promptPayCache = url;
       updatePromptPayPreview();
       return url;
     }
@@ -1825,12 +1996,11 @@ async function loadPromptPayFromFirebase() {
 }
 
 async function savePromptPayImage(dataUrl) {
-  // เก็บ base64 ใน localStorage + Firestore เท่านั้น (ไม่ใช้ Storage)
   let finalUrl = dataUrl || '';
   if (finalUrl && finalUrl.startsWith('data:') && finalUrl.length > 250000) {
     finalUrl = await compressImageIfNeeded(finalUrl, 360, 0.65);
   }
-
+  promptPayCache = finalUrl;
   if (firebaseReady && db) {
     try {
       if (finalUrl) {
@@ -1843,21 +2013,8 @@ async function savePromptPayImage(dataUrl) {
       }
     } catch (e) {
       console.error('save promptpay firestore:', e);
-    }
-  }
-
-  try {
-    if (finalUrl) {
-      localStorage.setItem(STORAGE_KEYS.promptpay, finalUrl);
-    } else {
-      localStorage.removeItem(STORAGE_KEYS.promptpay);
-    }
-  } catch (e) {
-    console.error('savePromptPayImage localStorage:', e);
-    if (finalUrl && finalUrl.startsWith('data:')) {
-      alert('พื้นที่จัดเก็บในเครื่องเต็ม');
-      updatePromptPayPreview();
-      return !!firebaseReady;
+      alert('บันทึกรูปพร้อมเพย์ไม่สำเร็จ');
+      return false;
     }
   }
   updatePromptPayPreview();
@@ -2380,40 +2537,7 @@ let trackPollingTimer = null;
 let ordersPollingTimer = null;
 
 function startRealtimeSync() {
-  // Cross-tab sync via storage event
-  window.addEventListener('storage', (e) => {
-    if (!e.key) return;
-
-    if (e.key === STORAGE_KEYS.orders) {
-      // Orders changed in another tab
-      if (document.getElementById('orders-list')) {
-        renderOrders();
-      }
-      // If track modal is open and has a result, refresh it
-      const trackResult = document.getElementById('track-result');
-      const trackPhone = document.getElementById('track-phone');
-      if (trackResult && trackResult.style.display !== 'none' &&
-          trackPhone?.value.trim()) {
-        searchOrder();
-      }
-    }
-
-    if (e.key === STORAGE_KEYS.products) {
-      if (document.getElementById('product-grid')) {
-        renderProducts();
-      }
-      if (document.getElementById('admin-product-list')) {
-        renderAdminProducts();
-      }
-    }
-
-    if (e.key === STORAGE_KEYS.cart) {
-      updateCartUI();
-      if (document.getElementById('cart-modal')?.classList.contains('show')) {
-        renderCartItems();
-      }
-    }
-  });
+  // สินค้า/ออเดอร์ ซิงค์ผ่าน Firebase onSnapshot แล้ว
 }
 
 function startOrdersPolling() {
@@ -2675,7 +2799,9 @@ window.searchOrder = searchOrder;
 async function resetAllData() {
   const pw = prompt('กรุณากรอกรหัสผ่านเพื่อรีเซ็ตออเดอร์:\n(รหัสเดียวกับหน้าผู้ขาย)');
   if (pw === null) return;
-  if (pw !== 'admin123') {
+  const creds = await loadAdminCreds();
+  const hash = await hashPassword(pw);
+  if (hash !== creds.passwordHash) {
     alert('รหัสผ่านไม่ถูกต้อง');
     return;
   }
@@ -2683,20 +2809,25 @@ async function resetAllData() {
     return;
   }
 
-  // ลบเฉพาะออเดอร์ + เคาน์เตอร์ (เก็บสินค้าไว้)
-  localStorage.removeItem(STORAGE_KEYS.orders);
-  localStorage.removeItem('coffee_order_counter');
   ordersCache = [];
 
-  if (firebaseReady && db) {
-    try {
-      const batch = db.batch();
-      const orderSnap = await db.collection('orders').get();
-      orderSnap.docs.forEach(d => batch.delete(d.ref));
-      await batch.commit();
-    } catch (e) {
-      console.error('Firebase reset orders error:', e);
-    }
+  if (!firebaseReady || !db) {
+    alert('ต้องเชื่อม Firebase ก่อน');
+    return;
+  }
+  try {
+    const batch = db.batch();
+    const orderSnap = await db.collection('orders').get();
+    orderSnap.docs.forEach(d => batch.delete(d.ref));
+    batch.set(db.collection('settings').doc('orderCounter'), {
+      value: 0,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+    await batch.commit();
+  } catch (e) {
+    console.error('Firebase reset orders error:', e);
+    alert('รีเซ็ตไม่สำเร็จ: ' + (e.message || e));
+    return;
   }
 
   alert('รีเซ็ตออเดอร์เรียบร้อยแล้ว');
@@ -2821,15 +2952,22 @@ function initBuyer() {
 function initAdmin() {
   if (isAdminLoggedIn()) {
     showAdminDashboard();
+  } else {
+    initFirebase();
+    if (firebaseReady && db) {
+      db.collection('settings').doc('admin').get().then(doc => {
+        const hint = document.getElementById('login-hint');
+        if (doc.exists && hint) hint.style.display = 'none';
+      }).catch(() => {});
+    }
   }
 
-  document.getElementById('login-btn')?.addEventListener('click', loginAdmin);
-  document.getElementById('admin-password')?.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') loginAdmin();
-  });
+  document.getElementById('login-form')?.addEventListener('submit', loginAdmin);
+  document.getElementById('toggle-pw-btn')?.addEventListener('click', togglePasswordVisibility);
   document.getElementById('logout-btn')?.addEventListener('click', logoutAdmin);
   document.getElementById('reset-all-btn')?.addEventListener('click', resetAllData);
   document.getElementById('reset-revenue-btn')?.addEventListener('click', resetRevenue);
+  document.getElementById('change-password-form')?.addEventListener('submit', handleChangePassword);
 
   setupTabs();
   setupOrderFilters();

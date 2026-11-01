@@ -678,39 +678,172 @@ body {
 
 .login-box {
   background: white;
-  padding: 2.4rem 2rem;
+  padding: 2.2rem 1.9rem 2rem;
   border-radius: 20px;
   box-shadow: var(--shadow-lg);
   width: 100%;
-  max-width: 380px;
+  max-width: 400px;
   text-align: center;
   border: 1px solid var(--border);
 }
 
-.login-box h2 {
-  margin-bottom: 0.5rem;
-  font-size: 1.4rem;
+.login-logo {
+  font-size: 2.8rem;
+  margin-bottom: 0.35rem;
+  line-height: 1;
+  filter: drop-shadow(0 2px 6px rgba(93, 64, 55, 0.2));
 }
 
-.login-box > p {
+.login-box h2 {
+  margin-bottom: 0.25rem;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.login-subtitle {
   color: var(--text-muted);
-  margin-bottom: 1.5rem;
-  font-size: 0.92rem;
+  margin-bottom: 1.4rem;
+  font-size: 0.9rem;
+}
+
+.login-field {
+  text-align: left;
+  margin-bottom: 0.95rem;
+}
+
+.login-field label {
+  display: block;
+  font-size: 0.88rem;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+  color: var(--text);
+}
+
+.input-with-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-with-icon .input-icon {
+  position: absolute;
+  left: 0.85rem;
+  font-size: 1rem;
+  pointer-events: none;
+  opacity: 0.75;
+  z-index: 1;
+}
+
+.input-with-icon input {
+  width: 100%;
+  padding: 0.75rem 2.6rem 0.75rem 2.5rem;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 1rem;
+  background: #FFFCFA;
+  transition: var(--transition);
+}
+
+.input-with-icon input:focus {
+  outline: none;
+  border-color: var(--primary-light);
+  box-shadow: 0 0 0 3px rgba(141, 110, 99, 0.15);
+  background: white;
+}
+
+.toggle-pw-btn {
+  position: absolute;
+  right: 0.45rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 1.05rem;
+  padding: 0.35rem 0.45rem;
+  border-radius: 6px;
+  line-height: 1;
+  opacity: 0.7;
+  transition: var(--transition);
+}
+
+.toggle-pw-btn:hover {
+  opacity: 1;
+  background: var(--bg-warm);
+}
+
+.login-options {
+  text-align: left;
+  margin: 0.2rem 0 1.1rem;
+}
+
+.remember-me {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.remember-me input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.login-hint {
+  margin-top: 1.1rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
 }
 
 .login-box code {
   background: var(--accent-soft);
-  padding: 0.2rem 0.55rem;
+  padding: 0.15rem 0.45rem;
   border-radius: 6px;
-  font-size: 0.88rem;
+  font-size: 0.82rem;
   color: var(--primary);
   font-weight: 600;
 }
 
 .error-text {
   color: var(--danger);
-  margin-top: 0.9rem;
+  margin-top: 0.85rem;
   font-size: 0.9rem;
+  font-weight: 500;
+  background: #FDE8E8;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #F5C6C0;
+}
+
+.form-msg {
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+}
+
+.form-msg.is-ok {
+  color: #0D7A3F;
+  background: #E6F6ED;
+  border: 1px solid #A8E0C0;
+}
+
+.form-msg.is-err {
+  color: var(--danger);
+  background: #FDE8E8;
+  border: 1px solid #F5C6C0;
+}
+
+.admin-welcome {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
   font-weight: 500;
 }
 
