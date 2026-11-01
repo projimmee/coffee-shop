@@ -2562,7 +2562,7 @@ function stopOrdersPolling() {
 let trackSearchBusy = false;
 function startTrackPolling() {
   stopTrackPolling();
-  // รีเฟรชจาก Firebase ทุก 3 วินาที ขณะเปิดหน้าติดตาม
+  // รีเฟรชจาก Firebase ทุก 50 วินาที ขณะเปิดหน้าติดตาม
   trackPollingTimer = setInterval(() => {
     const trackResult = document.getElementById('track-result');
     const trackPhone = document.getElementById('track-phone');
@@ -2571,7 +2571,7 @@ function startTrackPolling() {
       trackSearchBusy = true;
       Promise.resolve(searchOrder()).finally(() => { trackSearchBusy = false; });
     }
-  }, 3000);
+  }, 50000);
 }
 
 function stopTrackPolling() {
