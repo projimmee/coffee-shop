@@ -1105,6 +1105,7 @@ async function placeOrder(e) {
       id: orderId,
       customerName: name,
       customerPhone: phone,
+      customerPhoneNorm: normalizePhone(phone),
       deliveryType: deliveryType, // pickup | delivery
       deliveryLocation: location,
       deliveryLat: lat ? Number(lat) : null,
@@ -2558,17 +2559,19 @@ function stopOrdersPolling() {
   }
 }
 
+let trackSearchBusy = false;
 function startTrackPolling() {
   stopTrackPolling();
-  // Poll every 2s while track result is visible
+  // รีเฟรชจาก Firebase ทุก 3 วินาที ขณะเปิดหน้าติดตาม
   trackPollingTimer = setInterval(() => {
     const trackResult = document.getElementById('track-result');
     const trackPhone = document.getElementById('track-phone');
     if (trackResult && trackResult.style.display !== 'none' &&
-        trackPhone?.value.trim()) {
-      searchOrder();
+        trackPhone?.value.trim() && !trackSearchBusy) {
+      trackSearchBusy = true;
+      Promise.resolve(searchOrder()).finally(() => { trackSearchBusy = false; });
     }
-  }, 1500);
+  }, 3000);
 }
 
 function stopTrackPolling() {
@@ -2728,7 +2731,7 @@ function renderTrackOrderCard(order) {
     </div>`;
 }
 
-function searchOrder() {
+async function searchOrder() {
   const phone = document.getElementById('track-phone')?.value.trim() || '';
   const resultEl = document.getElementById('track-result');
   if (!resultEl) return;
@@ -2754,11 +2757,80 @@ function searchOrder() {
     return;
   }
 
-  const orders = getOrders()
-    .filter(o => normalizePhone(o.customerPhone) === norm)
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)); // ใหม่สุดก่อน
-
+  // แสดงสถานะกำลังค้นหา
   resultEl.style.display = 'block';
+  resultEl.innerHTML = `
+    <div class="track-not-found">
+      <div class="icon">⏳</div>
+      <p>กำลังค้นหาจาก Firebase...</p>
+    </div>`;
+
+  let orders = [];
+  try {
+    if (!firebaseReady) initFirebase();
+    if (!firebaseReady || !db) {
+      resultEl.innerHTML = `
+        <div class="track-not-found">
+          <div class="icon">☁️</div>
+          <p>ยังเชื่อม Firebase ไม่ได้<br><small>ตรวจสอบการเชื่อมต่อแล้วลองใหม่</small></p>
+        </div>`;
+      return;
+    }
+
+    // 1) ค้นด้วย customerPhoneNorm (ออเดอร์ใหม่)
+    let snap = await db.collection('orders')
+      .where('customerPhoneNorm', '==', norm)
+      .get();
+
+    if (snap.empty) {
+      // 2) fallback: ดึงออเดอร์ล่าสุดแล้วกรองเบอร์ (รองรับออเดอร์เก่าที่ยังไม่มี phoneNorm)
+      snap = await db.collection('orders')
+        .orderBy('createdAt', 'desc')
+        .limit(200)
+        .get();
+      orders = snap.docs
+        .map(d => d.data())
+        .filter(o => {
+          const n = o.customerPhoneNorm || normalizePhone(o.customerPhone);
+          return n === norm;
+        });
+    } else {
+      orders = snap.docs.map(d => d.data());
+    }
+
+    // อัปเดต cache ด้วยผลลัพธ์ (ไม่ทับทั้งก้อน ถ้ามี subscribe อยู่)
+    orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    // รวมเข้า ordersCache เพื่อให้ queue position คำนวณได้
+    // โหลดออเดอร์ที่กำลังทำทั้งหมดสำหรับคิว
+    try {
+      const activeSnap = await db.collection('orders')
+        .where('status', 'in', ['pending', 'preparing', 'shipping'])
+        .get();
+      const activeOrders = activeSnap.docs.map(d => d.data());
+      // merge เข้า cache
+      const byId = {};
+      (ordersCache || []).forEach(o => { if (o && o.id) byId[o.id] = o; });
+      activeOrders.forEach(o => { if (o && o.id) byId[o.id] = o; });
+      orders.forEach(o => { if (o && o.id) byId[o.id] = o; });
+      ordersCache = Object.values(byId);
+    } catch (e) {
+      // ถ้า query 'in' ไม่ได้ (rules/index) ใช้ orders ที่ค้นเจออย่างเดียว
+      console.warn('load active orders for queue:', e);
+      const byId = {};
+      (ordersCache || []).forEach(o => { if (o && o.id) byId[o.id] = o; });
+      orders.forEach(o => { if (o && o.id) byId[o.id] = o; });
+      ordersCache = Object.values(byId);
+    }
+  } catch (err) {
+    console.error('searchOrder Firebase:', err);
+    resultEl.innerHTML = `
+      <div class="track-not-found">
+        <div class="icon">⚠️</div>
+        <p>ค้นหาไม่สำเร็จ<br><small>${(err && err.message) ? err.message : 'ลองใหม่อีกครั้ง'}</small></p>
+      </div>`;
+    return;
+  }
 
   if (orders.length === 0) {
     resultEl.innerHTML = `
@@ -2778,7 +2850,7 @@ function searchOrder() {
 
   resultEl.innerHTML = `
     <div class="track-list-header">
-      <div class="track-live-badge">🔴 สด · อัปเดต ${now}</div>
+      <div class="track-live-badge">🔴 สด · Firebase · อัปเดต ${now}</div>
       <div class="track-list-summary">
         พบ <strong>${orders.length}</strong> ออเดอร์
         ${activeCount > 0 ? `· กำลังดำเนินการ <strong>${activeCount}</strong>` : ''}
