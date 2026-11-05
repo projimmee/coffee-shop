@@ -443,11 +443,130 @@ function subscribeProducts(callback) {
   }, err => console.error('subscribeProducts:', err));
 }
 
-// --- สถานะร้าน (เปิด/ปิด) ---
+// --- สถานะร้าน + แบรนด์ร้าน (เปิด/ปิด, ชื่อ, โลโก้, ข้อความ) ---
+const DEFAULT_SHOP_BRANDING = {
+  name: 'Coffee Shop',
+  logo: '☕',
+  logoType: 'emoji', // emoji | image
+  heroTitle: 'ยินดีต้อนรับสู่ Coffee Shop',
+  heroSubtitle: 'กาแฟคุณภาพ หอมกรุ่น ทุกแก้วที่คุณดื่ม',
+  closedTitle: 'ร้านปิดชั่วคราว',
+  closedMessage: 'ขออภัย ขณะนี้ยังไม่รับออเดอร์ กรุณากลับมาใหม่ภายหลัง',
+  footerText: '© 2025 Coffee Shop | ระบบจัดการร้านกาแฟ',
+  receiptSubtitle: 'ใบเสร็จรับเงิน',
+  loginSubtitle: 'Coffee Shop Admin'
+};
+
 let shopClosedCache = false;
+let shopBrandingCache = { ...DEFAULT_SHOP_BRANDING };
 
 function isShopClosed() {
   return !!shopClosedCache;
+}
+
+function getShopBranding() {
+  return { ...DEFAULT_SHOP_BRANDING, ...shopBrandingCache };
+}
+
+function applyShopBrandingFromData(data) {
+  if (!data || typeof data !== 'object') return;
+  if (typeof data.closed === 'boolean') {
+    shopClosedCache = data.closed;
+  }
+  const next = { ...DEFAULT_SHOP_BRANDING };
+  if (data.name && String(data.name).trim()) next.name = String(data.name).trim();
+  if (data.logo != null && String(data.logo).trim()) next.logo = String(data.logo).trim();
+  if (data.logoType === 'image' || data.logoType === 'emoji') next.logoType = data.logoType;
+  if (data.heroTitle != null) next.heroTitle = String(data.heroTitle);
+  if (data.heroSubtitle != null) next.heroSubtitle = String(data.heroSubtitle);
+  if (data.closedTitle != null) next.closedTitle = String(data.closedTitle);
+  if (data.closedMessage != null) next.closedMessage = String(data.closedMessage);
+  if (data.footerText != null) next.footerText = String(data.footerText);
+  if (data.receiptSubtitle != null) next.receiptSubtitle = String(data.receiptSubtitle);
+  if (data.loginSubtitle != null) next.loginSubtitle = String(data.loginSubtitle);
+  if (next.logo && (next.logo.startsWith('data:') || /^https?:\/\//i.test(next.logo))) {
+    next.logoType = 'image';
+  }
+  shopBrandingCache = next;
+}
+
+function applyShopBrandingToUI() {
+  const b = getShopBranding();
+
+  document.querySelectorAll('.nav-brand .logo').forEach(el => {
+    if (b.logoType === 'image' && b.logo) {
+      el.innerHTML = `<img src="${b.logo}" alt="logo" style="width:1.5em;height:1.5em;object-fit:contain;vertical-align:middle;border-radius:6px;">`;
+    } else {
+      el.textContent = b.logo || '☕';
+    }
+  });
+  document.querySelectorAll('.nav-brand .brand-name').forEach(el => {
+    el.textContent = b.name || 'Coffee Shop';
+  });
+
+  if (document.getElementById('product-grid')) {
+    document.title = `☕ ${b.name} - ร้านกาแฟ`;
+  } else if (document.getElementById('admin-dashboard') || document.getElementById('login-screen')) {
+    document.title = `👨‍💼 ผู้ขาย - ${b.name}`;
+  }
+
+  const heroH1 = document.querySelector('.hero-content h1');
+  const heroP = document.querySelector('.hero-content p');
+  if (heroH1) heroH1.textContent = b.heroTitle || '';
+  if (heroP) heroP.textContent = b.heroSubtitle || '';
+
+  const footerP = document.querySelector('.footer p');
+  if (footerP) footerP.textContent = b.footerText || '';
+
+  const loginLogo = document.querySelector('.login-logo');
+  if (loginLogo) {
+    if (b.logoType === 'image' && b.logo) {
+      loginLogo.innerHTML = `<img src="${b.logo}" alt="logo" style="width:2.4em;height:2.4em;object-fit:contain;border-radius:10px;">`;
+    } else {
+      loginLogo.textContent = b.logo || '☕';
+    }
+  }
+  const loginSubtitle = document.querySelector('.login-subtitle');
+  if (loginSubtitle) loginSubtitle.textContent = b.loginSubtitle || `${b.name} Admin`;
+
+  const banner = document.getElementById('shop-closed-banner');
+  if (banner) {
+    const strong = banner.querySelector('strong');
+    const p = banner.querySelector('p');
+    if (strong) strong.textContent = b.closedTitle || 'ร้านปิดชั่วคราว';
+    if (p) p.textContent = b.closedMessage || '';
+  }
+
+  fillShopBrandingForm();
+}
+
+function fillShopBrandingForm() {
+  const b = getShopBranding();
+  const setVal = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.value = val != null ? val : '';
+  };
+  setVal('shop-name', b.name);
+  setVal('shop-logo-emoji', b.logoType === 'image' ? '' : (b.logo || ''));
+  setVal('shop-hero-title', b.heroTitle);
+  setVal('shop-hero-subtitle', b.heroSubtitle);
+  setVal('shop-closed-title', b.closedTitle);
+  setVal('shop-closed-message', b.closedMessage);
+  setVal('shop-footer-text', b.footerText);
+  setVal('shop-receipt-subtitle', b.receiptSubtitle);
+  setVal('shop-login-subtitle', b.loginSubtitle);
+
+  const preview = document.getElementById('shop-logo-preview');
+  const clearBtn = document.getElementById('clear-shop-logo-btn');
+  if (preview) {
+    if (b.logoType === 'image' && b.logo) {
+      preview.innerHTML = `<img src="${b.logo}" alt="logo" style="width:100%;height:100%;object-fit:contain;display:block;">`;
+      if (clearBtn) clearBtn.style.display = 'inline-flex';
+    } else {
+      preview.innerHTML = `<span class="preview-placeholder" style="font-size:2.2rem;">${b.logo || '☕'}</span>`;
+      if (clearBtn) clearBtn.style.display = 'none';
+    }
+  }
 }
 
 async function setShopClosed(closed) {
@@ -471,20 +590,59 @@ async function setShopClosed(closed) {
   }
 }
 
+async function saveShopBranding(partial) {
+  const current = getShopBranding();
+  const next = { ...current, ...partial };
+  if (next.logo && (String(next.logo).startsWith('data:') || /^https?:\/\//i.test(String(next.logo)))) {
+    next.logoType = 'image';
+  } else if (partial.logoType) {
+    next.logoType = partial.logoType;
+  } else if (!next.logoType) {
+    next.logoType = 'emoji';
+  }
+  shopBrandingCache = next;
+
+  if (firebaseReady && db) {
+    try {
+      await db.collection('settings').doc('shop').set({
+        name: next.name,
+        logo: next.logo,
+        logoType: next.logoType,
+        heroTitle: next.heroTitle,
+        heroSubtitle: next.heroSubtitle,
+        closedTitle: next.closedTitle,
+        closedMessage: next.closedMessage,
+        footerText: next.footerText,
+        receiptSubtitle: next.receiptSubtitle,
+        loginSubtitle: next.loginSubtitle,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (e) {
+      console.error('saveShopBranding Firebase:', e);
+      throw e;
+    }
+  }
+  applyShopBrandingToUI();
+  updateShopClosedUI();
+  return true;
+}
+
 async function loadShopStatusFromFirebase() {
   if (!firebaseReady || !db) {
+    applyShopBrandingToUI();
     updateShopClosedUI();
     updateAdminShopToggleUI();
     return isShopClosed();
   }
   try {
     const doc = await db.collection('settings').doc('shop').get();
-    if (doc.exists && typeof doc.data().closed === 'boolean') {
-      shopClosedCache = doc.data().closed;
+    if (doc.exists) {
+      applyShopBrandingFromData(doc.data());
     }
   } catch (e) {
     console.error('loadShopStatusFromFirebase:', e);
   }
+  applyShopBrandingToUI();
   updateShopClosedUI();
   updateAdminShopToggleUI();
   return isShopClosed();
@@ -493,12 +651,13 @@ async function loadShopStatusFromFirebase() {
 function subscribeShopStatus() {
   if (!firebaseReady || !db) return () => {};
   return db.collection('settings').doc('shop').onSnapshot(doc => {
-    if (doc.exists && typeof doc.data().closed === 'boolean') {
-      const prev = shopClosedCache;
-      shopClosedCache = doc.data().closed;
+    if (doc.exists) {
+      const prevClosed = shopClosedCache;
+      applyShopBrandingFromData(doc.data());
+      applyShopBrandingToUI();
       updateShopClosedUI();
       updateAdminShopToggleUI();
-      if (prev !== shopClosedCache && document.getElementById('product-grid')) {
+      if (prevClosed !== shopClosedCache && document.getElementById('product-grid')) {
         renderProducts();
         updateCartUI();
       }
@@ -508,6 +667,7 @@ function subscribeShopStatus() {
 
 function updateShopClosedUI() {
   const closed = isShopClosed();
+  const b = getShopBranding();
   let banner = document.getElementById('shop-closed-banner');
   if (!banner && document.getElementById('product-grid')) {
     banner = document.createElement('div');
@@ -517,8 +677,8 @@ function updateShopClosedUI() {
       <div class="shop-closed-inner">
         <span class="shop-closed-icon">🔒</span>
         <div>
-          <strong>ร้านปิดชั่วคราว</strong>
-          <p>ขออภัย ขณะนี้ยังไม่รับออเดอร์ กรุณากลับมาใหม่ภายหลัง</p>
+          <strong>${b.closedTitle || 'ร้านปิดชั่วคราว'}</strong>
+          <p>${b.closedMessage || 'ขออภัย ขณะนี้ยังไม่รับออเดอร์ กรุณากลับมาใหม่ภายหลัง'}</p>
         </div>
       </div>`;
     const hero = document.querySelector('.hero');
@@ -527,12 +687,16 @@ function updateShopClosedUI() {
     } else {
       document.body.insertBefore(banner, document.body.firstChild);
     }
+  } else if (banner) {
+    const strong = banner.querySelector('strong');
+    const p = banner.querySelector('p');
+    if (strong) strong.textContent = b.closedTitle || 'ร้านปิดชั่วคราว';
+    if (p) p.textContent = b.closedMessage || '';
   }
   if (banner) {
     banner.style.display = closed ? 'block' : 'none';
   }
 
-  // ปุ่มตะกร้า / checkout
   const checkoutBtn = document.getElementById('checkout-btn');
   if (checkoutBtn) {
     if (closed) {
@@ -545,18 +709,16 @@ function updateShopClosedUI() {
     }
   }
 
-  // ปุ่มใส่ตะกร้าบนการ์ดสินค้า
   document.querySelectorAll('.product-card:not(.sold-out) .product-footer .btn-primary').forEach(btn => {
     if (closed) {
       btn.disabled = true;
       btn.classList.add('btn-shop-closed');
       btn.textContent = 'ร้านปิด';
-      btn.onclick = (e) => { e.preventDefault(); alert('ร้านปิดชั่วคราว ยังไม่รับออเดอร์'); };
+      btn.onclick = (e) => { e.preventDefault(); alert((b.closedTitle || 'ร้านปิดชั่วคราว') + ' — ยังไม่รับออเดอร์'); };
     }
   });
-  // เมื่อเปิดร้านใหม่ ให้ render products ใหม่เพื่อคืนปุ่ม
   if (!closed && document.getElementById('product-grid')) {
-    // ไม่เรียก renderProducts ทุกครั้งเพื่อกัน loop — เรียกเฉพาะตอนเปลี่ยนสถานะจากปุ่ม
+    // no-op
   }
 }
 
@@ -583,6 +745,108 @@ async function toggleShopClosed() {
   if (!confirm(msg)) return;
   await setShopClosed(next);
   alert(next ? 'ปิดร้านแล้ว' : 'เปิดร้านแล้ว');
+}
+
+async function handleSaveShopBranding(e) {
+  e.preventDefault();
+  const name = (document.getElementById('shop-name')?.value || '').trim();
+  if (!name) {
+    alert('กรุณากรอกชื่อร้าน');
+    return;
+  }
+  const emoji = (document.getElementById('shop-logo-emoji')?.value || '').trim();
+  const current = getShopBranding();
+  let logo = current.logo;
+  let logoType = current.logoType;
+
+  if (emoji) {
+    logo = emoji;
+    logoType = 'emoji';
+  }
+
+  const payload = {
+    name,
+    logo,
+    logoType,
+    heroTitle: (document.getElementById('shop-hero-title')?.value || '').trim(),
+    heroSubtitle: (document.getElementById('shop-hero-subtitle')?.value || '').trim(),
+    closedTitle: (document.getElementById('shop-closed-title')?.value || '').trim(),
+    closedMessage: (document.getElementById('shop-closed-message')?.value || '').trim(),
+    footerText: (document.getElementById('shop-footer-text')?.value || '').trim(),
+    receiptSubtitle: (document.getElementById('shop-receipt-subtitle')?.value || '').trim(),
+    loginSubtitle: (document.getElementById('shop-login-subtitle')?.value || '').trim()
+  };
+
+  const msgEl = document.getElementById('shop-branding-msg');
+  const btn = document.getElementById('save-shop-branding-btn');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'กำลังบันทึก...';
+  }
+  try {
+    await saveShopBranding(payload);
+    if (msgEl) {
+      msgEl.style.display = 'block';
+      msgEl.className = 'form-msg is-ok';
+      msgEl.textContent = 'บันทึกข้อมูลร้านเรียบร้อยแล้ว';
+      setTimeout(() => { msgEl.style.display = 'none'; }, 3000);
+    } else {
+      alert('บันทึกข้อมูลร้านเรียบร้อยแล้ว');
+    }
+  } catch (err) {
+    console.error(err);
+    if (msgEl) {
+      msgEl.style.display = 'block';
+      msgEl.className = 'form-msg is-err';
+      msgEl.textContent = 'บันทึกไม่สำเร็จ: ' + (err.message || err);
+    } else {
+      alert('บันทึกไม่สำเร็จ');
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'บันทึกข้อมูลร้าน';
+    }
+  }
+}
+
+function handleShopLogoFile(e) {
+  const input = e.target || document.getElementById('shop-logo-file');
+  const file = input && input.files && input.files[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) {
+    alert('กรุณาเลือกไฟล์รูปภาพ');
+    input.value = '';
+    return;
+  }
+  if (file.size > 3 * 1024 * 1024) {
+    alert('ไฟล์ใหญ่เกินไป (สูงสุด 3MB)');
+    input.value = '';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    compressImageIfNeeded(reader.result, 256, 0.8).then(async src => {
+      try {
+        await saveShopBranding({ logo: src, logoType: 'image' });
+        const emojiInput = document.getElementById('shop-logo-emoji');
+        if (emojiInput) emojiInput.value = '';
+        alert('อัปโหลดโลโก้ร้านเรียบร้อย');
+      } catch (err) {
+        alert('บันทึกลogo ไม่สำเร็จ');
+      }
+    }).catch(() => alert('ประมวลผลรูปไม่สำเร็จ'));
+  };
+  reader.onerror = () => alert('อ่านไฟล์ไม่สำเร็จ');
+  reader.readAsDataURL(file);
+}
+
+async function clearShopLogoImage() {
+  if (!confirm('ลบรูปโลโก้ แล้วกลับไปใช้ emoji เริ่มต้น?')) return;
+  const emoji = (document.getElementById('shop-logo-emoji')?.value || '').trim() || '☕';
+  await saveShopBranding({ logo: emoji, logoType: 'emoji' });
+  const input = document.getElementById('shop-logo-file');
+  if (input) input.value = '';
 }
 
 // --- Cart (sessionStorage — คนละเครื่องคนละตะกร้า) ---
@@ -1466,6 +1730,7 @@ function setupTabs() {
       if (btn.dataset.tab === 'settings') {
         updatePromptPayPreview();
         updateAdminShopToggleUI();
+        fillShopBrandingForm();
       }
       if (btn.dataset.tab === 'revenue') {
         renderRevenue();
@@ -2124,12 +2389,17 @@ function showReceipt(orderId) {
        </div>`
     : '';
 
+  const branding = getShopBranding();
+  const logoHtml = branding.logoType === 'image' && branding.logo
+    ? `<img src="${branding.logo}" alt="logo" style="width:48px;height:48px;object-fit:contain;border-radius:8px;">`
+    : `<div class="receipt-logo">${branding.logo || '☕'}</div>`;
+
   body.innerHTML = `
     <div class="receipt-paper" id="receipt-print-area">
       <div class="receipt-header">
-        <div class="receipt-logo">☕</div>
-        <h2>Coffee Shop</h2>
-        <p>ใบเสร็จรับเงิน</p>
+        ${logoHtml}
+        <h2>${branding.name || 'Coffee Shop'}</h2>
+        <p>${branding.receiptSubtitle || 'ใบเสร็จรับเงิน'}</p>
       </div>
       <div class="receipt-meta">
         <div><span>เลขที่</span><strong>${order.id}</strong></div>
@@ -2927,11 +3197,13 @@ function initBuyer() {
     subscribeShopStatus();
   } else {
     renderProducts();
+    applyShopBrandingToUI();
     updateShopClosedUI();
   }
 
   setupFilters();
   updateCartUI();
+  applyShopBrandingToUI();
   updateShopClosedUI();
 
   document.getElementById('cart-btn')?.addEventListener('click', (e) => {
@@ -3058,8 +3330,28 @@ function initAdmin() {
   document.getElementById('promptpay-file')?.addEventListener('change', handlePromptPayUpload);
   document.getElementById('clear-promptpay-btn')?.addEventListener('click', clearPromptPay);
   document.getElementById('toggle-shop-btn')?.addEventListener('click', toggleShopClosed);
+  document.getElementById('shop-branding-form')?.addEventListener('submit', handleSaveShopBranding);
+  document.getElementById('shop-logo-file')?.addEventListener('change', handleShopLogoFile);
+  document.getElementById('clear-shop-logo-btn')?.addEventListener('click', clearShopLogoImage);
+  document.querySelectorAll('.logo-emoji-pick').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const emoji = btn.dataset.emoji || '☕';
+      const input = document.getElementById('shop-logo-emoji');
+      if (input) input.value = emoji;
+      saveShopBranding({ logo: emoji, logoType: 'emoji' }).catch(() => {});
+    });
+  });
   updatePromptPayPreview();
   updateAdminShopToggleUI();
+  if (!isAdminLoggedIn()) {
+    initFirebase();
+    if (firebaseReady) {
+      loadShopStatusFromFirebase();
+      subscribeShopStatus();
+    } else {
+      applyShopBrandingToUI();
+    }
+  }
 
   document.querySelectorAll('.modal').forEach(modal => {
     modal.addEventListener('click', (e) => {

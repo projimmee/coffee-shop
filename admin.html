@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>👨‍💼 ผู้ขาย - Coffee Shop</title>
-  <link rel="stylesheet" href="style.css?v=20261101poll50" />
+  <link rel="stylesheet" href="style.css?v=20261105brand" />
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -253,6 +253,81 @@
         <button type="button" id="toggle-shop-btn" class="btn btn-danger btn-block">🔒 ปิดร้าน</button>
       </div>
 
+
+      <div class="form-card" style="margin-bottom:1.5rem;">
+        <h2>🏷️ ข้อมูลร้าน / แบรนด์</h2>
+        <p style="color:var(--text-muted); font-size:0.92rem; margin-bottom:0.9rem;">
+          เปลี่ยนชื่อร้าน ไอคอน และข้อความที่แสดงหน้าผู้ซื้อ ใบเสร็จ และหน้าเข้าสู่ระบบ
+        </p>
+        <form id="shop-branding-form">
+          <div class="form-group">
+            <label>ชื่อร้าน *</label>
+            <input type="text" id="shop-name" required placeholder="เช่น Coffee Shop" maxlength="60" />
+          </div>
+
+          <div class="form-group">
+            <label>ไอคอนร้าน (Emoji หรืออัปโหลดรูป)</label>
+            <div class="image-upload-area">
+              <div id="shop-logo-preview" class="image-preview" style="max-width:120px;height:100px;">
+                <span class="preview-placeholder" style="font-size:2.2rem;">☕</span>
+              </div>
+              <div class="logo-emoji-picks" style="display:flex;flex-wrap:wrap;gap:0.4rem;margin:0.4rem 0;">
+                <button type="button" class="btn btn-outline btn-sm logo-emoji-pick" data-emoji="☕">☕</button>
+                <button type="button" class="btn btn-outline btn-sm logo-emoji-pick" data-emoji="🧋">🧋</button>
+                <button type="button" class="btn btn-outline btn-sm logo-emoji-pick" data-emoji="🍵">🍵</button>
+                <button type="button" class="btn btn-outline btn-sm logo-emoji-pick" data-emoji="🍰">🍰</button>
+                <button type="button" class="btn btn-outline btn-sm logo-emoji-pick" data-emoji="🥐">🥐</button>
+                <button type="button" class="btn btn-outline btn-sm logo-emoji-pick" data-emoji="🏪">🏪</button>
+                <button type="button" class="btn btn-outline btn-sm logo-emoji-pick" data-emoji="✨">✨</button>
+              </div>
+              <div class="form-group" style="margin-bottom:0.5rem;">
+                <label style="font-size:0.85rem;color:var(--text-muted);">หรือพิมพ์ emoji เอง</label>
+                <input type="text" id="shop-logo-emoji" placeholder="☕" maxlength="8" />
+              </div>
+              <div class="image-upload-controls" style="flex-wrap:wrap;">
+                <label class="btn btn-outline btn-sm file-upload-btn">
+                  📷 อัปโหลดโลโก้
+                  <input type="file" id="shop-logo-file" accept="image/*" hidden />
+                </label>
+                <button type="button" id="clear-shop-logo-btn" class="btn btn-outline btn-sm" style="display:none;">ลบรูปโลโก้</button>
+              </div>
+              <small>เลือกรูปหรือ emoji ก็ได้ · รูปจะถูกย่อแล้วเก็บในฐานข้อมูล</small>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>หัวข้อหน้าแรก (Hero)</label>
+            <input type="text" id="shop-hero-title" placeholder="ยินดีต้อนรับสู่ Coffee Shop" maxlength="80" />
+          </div>
+          <div class="form-group">
+            <label>คำโปรยหน้าแรก</label>
+            <input type="text" id="shop-hero-subtitle" placeholder="กาแฟคุณภาพ หอมกรุ่น ทุกแก้วที่คุณดื่ม" maxlength="120" />
+          </div>
+          <div class="form-group">
+            <label>หัวข้อเมื่อปิดร้าน</label>
+            <input type="text" id="shop-closed-title" placeholder="ร้านปิดชั่วคราว" maxlength="60" />
+          </div>
+          <div class="form-group">
+            <label>ข้อความเมื่อปิดร้าน</label>
+            <textarea id="shop-closed-message" rows="2" placeholder="ขออภัย ขณะนี้ยังไม่รับออเดอร์ กรุณากลับมาใหม่ภายหลัง" maxlength="200"></textarea>
+          </div>
+          <div class="form-group">
+            <label>ข้อความท้ายหน้า (Footer)</label>
+            <input type="text" id="shop-footer-text" placeholder="© 2025 Coffee Shop | ระบบจัดการร้านกาแฟ" maxlength="100" />
+          </div>
+          <div class="form-group">
+            <label>หัวข้อใบเสร็จ</label>
+            <input type="text" id="shop-receipt-subtitle" placeholder="ใบเสร็จรับเงิน" maxlength="40" />
+          </div>
+          <div class="form-group">
+            <label>ข้อความใต้โลโก้หน้าเข้าสู่ระบบ</label>
+            <input type="text" id="shop-login-subtitle" placeholder="Coffee Shop Admin" maxlength="40" />
+          </div>
+          <button type="submit" class="btn btn-primary btn-block" id="save-shop-branding-btn">บันทึกข้อมูลร้าน</button>
+          <p id="shop-branding-msg" class="form-msg" style="display:none;"></p>
+        </form>
+      </div>
+
       <div class="form-card">
         <h2>📱 รูป PromptPay / QR ชำระเงิน</h2>
         <p style="color:var(--text-muted); font-size:0.92rem; margin-bottom:1rem;">
@@ -307,7 +382,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20261101poll50"></script>
+  <script src="app.js?v=20261105brand"></script>
   <script>
     // Admin specific init
     document.addEventListener('DOMContentLoaded', () => {
