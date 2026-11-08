@@ -2804,7 +2804,6 @@ async function saveProduct(e) {
 
 
 // ===== Real-time Sync (no refresh needed) =====
-let trackPollingTimer = null;
 let ordersPollingTimer = null;
 
 function startRealtimeSync() {
@@ -2829,46 +2828,39 @@ function stopOrdersPolling() {
   }
 }
 
-let trackSearchBusy = false;
-function startTrackPolling() {
-  stopTrackPolling();
-  // รีเฟรชจาก Firebase ทุก 50 วินาที ขณะเปิดหน้าติดตาม
-  trackPollingTimer = setInterval(() => {
-    const trackResult = document.getElementById('track-result');
-    const trackPhone = document.getElementById('track-phone');
-    if (trackResult && trackResult.style.display !== 'none' &&
-        trackPhone?.value.trim() && !trackSearchBusy) {
-      trackSearchBusy = true;
-      Promise.resolve(searchOrder()).finally(() => { trackSearchBusy = false; });
-    }
-  }, 50000);
-}
 
-function stopTrackPolling() {
-  if (trackPollingTimer) {
-    clearInterval(trackPollingTimer);
-    trackPollingTimer = null;
-  }
-}
+// ===== Track Order (Buyer) — Firebase only (ไม่มี localStorage) =====
+let trackUnsubscribe = null;       // onSnapshot ของออเดอร์ตามเบอร์
+let trackActiveUnsub = null;       // onSnapshot ออเดอร์ที่กำลังทำ (สำหรับคิว)
+let trackActiveOrders = [];        // รายการออเดอร์ active จาก Firebase
+let trackCurrentNorm = '';         // เบอร์ที่กำลังติดตาม
 
-
-// ===== Track Order (Buyer) — ค้นด้วยเบอร์โทร แสดงออเดอร์ทั้งหมด =====
 function normalizePhone(phone) {
   return String(phone || '').replace(/\D/g, '');
 }
 
+function stopTrackListener() {
+  if (typeof trackUnsubscribe === 'function') {
+    try { trackUnsubscribe(); } catch (_) {}
+  }
+  trackUnsubscribe = null;
+  if (typeof trackActiveUnsub === 'function') {
+    try { trackActiveUnsub(); } catch (_) {}
+  }
+  trackActiveUnsub = null;
+  trackCurrentNorm = '';
+}
+
 function getQueuePosition(order) {
-  // นับออเดอร์ที่ยังรอทำ/กำลังทำ/กำลังจัดส่ง และสั่งก่อนออเดอร์นี้
+  // นับจาก Firebase active orders เท่านั้น (ไม่ใช้ localStorage)
   if (order.status === 'completed' || order.status === 'cancelled') return 0;
-  const orders = getOrders();
-  const active = orders.filter(o =>
+  const active = (trackActiveOrders.length ? trackActiveOrders : getOrders()).filter(o =>
     o.status === 'pending' || o.status === 'preparing' || o.status === 'shipping'
   );
-  // เรียงตามเวลาสั่ง (เก่ากว่ามาก่อน)
   active.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
   const idx = active.findIndex(o => o.id === order.id);
   if (idx === -1) return 0;
-  return idx; // 0 = ถึงคิวแล้ว, 1 = เหลือ 1 คิวก่อนหน้า ฯลฯ
+  return idx;
 }
 
 const TRACK_STATUS_MAP = {
@@ -2922,12 +2914,12 @@ function openTrack(e) {
     const phoneEl = document.getElementById('track-phone');
     if (phoneEl) phoneEl.focus();
   }, 100);
-  startTrackPolling();
+  // ไม่ใช้ polling / localStorage — รอผู้ใช้กดค้น แล้วเปิด onSnapshot จาก Firebase
 }
 
 function closeTrack() {
   document.getElementById('track-modal')?.classList.remove('show');
-  stopTrackPolling();
+  stopTrackListener();
 }
 
 /** สร้างการ์ดสถานะออเดอร์ 1 ใบ */
@@ -3027,108 +3019,116 @@ async function searchOrder() {
     return;
   }
 
-  // แสดงสถานะกำลังค้นหา
   resultEl.style.display = 'block';
+  resultEl.dataset.hasOrders = '0';
+  delete resultEl.dataset.fallbackDone;
+  resultEl._trackOrders = null;
   resultEl.innerHTML = `
     <div class="track-not-found">
       <div class="icon">⏳</div>
       <p>กำลังค้นหาจาก Firebase...</p>
     </div>`;
 
-  let orders = [];
+  if (!firebaseReady) initFirebase();
+  if (!firebaseReady || !db) {
+    resultEl.innerHTML = `
+      <div class="track-not-found">
+        <div class="icon">☁️</div>
+        <p>ยังเชื่อม Firebase ไม่ได้<br><small>ตรวจสอบการเชื่อมต่อแล้วลองใหม่</small></p>
+      </div>`;
+    return;
+  }
+
+  // ปิด listener เดิม แล้วเปิดใหม่สำหรับเบอร์นี้ (Firebase only — ไม่ใช้ localStorage)
+  stopTrackListener();
+  trackCurrentNorm = norm;
+
+  // โหลดออเดอร์ที่กำลังทำ (สำหรับคำนวณคิว) แบบ real-time
   try {
-    if (!firebaseReady) initFirebase();
-    if (!firebaseReady || !db) {
+    trackActiveUnsub = db.collection('orders')
+      .where('status', 'in', ['pending', 'preparing', 'shipping'])
+      .onSnapshot(snap => {
+        trackActiveOrders = snap.docs.map(d => d.data());
+        // รีเรนเดอร์การ์ดถ้ามีผลลัพธ์อยู่แล้ว (อัปเดตเลขคิว)
+        if (resultEl.dataset.hasOrders === '1' && resultEl._trackOrders) {
+          showTrackOrders(resultEl._trackOrders);
+        }
+      }, err => {
+        console.warn('track active orders:', err);
+        trackActiveOrders = [];
+      });
+  } catch (e) {
+    console.warn('track active subscribe:', e);
+    trackActiveOrders = [];
+  }
+
+  // ฟังก์ชันแสดงผลจากรายการออเดอร์
+  function showTrackOrders(orders) {
+    orders = (orders || []).slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    if (orders.length === 0) {
+      resultEl.dataset.hasOrders = '0';
+      resultEl._trackOrders = null;
       resultEl.innerHTML = `
         <div class="track-not-found">
-          <div class="icon">☁️</div>
-          <p>ยังเชื่อม Firebase ไม่ได้<br><small>ตรวจสอบการเชื่อมต่อแล้วลองใหม่</small></p>
+          <div class="icon">😕</div>
+          <p>ไม่พบออเดอร์ของเบอร์นี้<br><small>ตรวจสอบเบอร์โทรอีกครั้ง หรือยังไม่ได้สั่งซื้อ</small></p>
         </div>`;
       return;
     }
-
-    // 1) ค้นด้วย customerPhoneNorm (ออเดอร์ใหม่)
-    let snap = await db.collection('orders')
-      .where('customerPhoneNorm', '==', norm)
-      .get();
-
-    if (snap.empty) {
-      // 2) fallback: ดึงออเดอร์ล่าสุดแล้วกรองเบอร์ (รองรับออเดอร์เก่าที่ยังไม่มี phoneNorm)
-      snap = await db.collection('orders')
-        .orderBy('createdAt', 'desc')
-        .limit(200)
-        .get();
-      orders = snap.docs
-        .map(d => d.data())
-        .filter(o => {
-          const n = o.customerPhoneNorm || normalizePhone(o.customerPhone);
-          return n === norm;
-        });
-    } else {
-      orders = snap.docs.map(d => d.data());
-    }
-
-    // อัปเดต cache ด้วยผลลัพธ์ (ไม่ทับทั้งก้อน ถ้ามี subscribe อยู่)
-    orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-    // รวมเข้า ordersCache เพื่อให้ queue position คำนวณได้
-    // โหลดออเดอร์ที่กำลังทำทั้งหมดสำหรับคิว
-    try {
-      const activeSnap = await db.collection('orders')
-        .where('status', 'in', ['pending', 'preparing', 'shipping'])
-        .get();
-      const activeOrders = activeSnap.docs.map(d => d.data());
-      // merge เข้า cache
-      const byId = {};
-      (ordersCache || []).forEach(o => { if (o && o.id) byId[o.id] = o; });
-      activeOrders.forEach(o => { if (o && o.id) byId[o.id] = o; });
-      orders.forEach(o => { if (o && o.id) byId[o.id] = o; });
-      ordersCache = Object.values(byId);
-    } catch (e) {
-      // ถ้า query 'in' ไม่ได้ (rules/index) ใช้ orders ที่ค้นเจออย่างเดียว
-      console.warn('load active orders for queue:', e);
-      const byId = {};
-      (ordersCache || []).forEach(o => { if (o && o.id) byId[o.id] = o; });
-      orders.forEach(o => { if (o && o.id) byId[o.id] = o; });
-      ordersCache = Object.values(byId);
-    }
-  } catch (err) {
-    console.error('searchOrder Firebase:', err);
+    resultEl.dataset.hasOrders = '1';
+    resultEl._trackOrders = orders;
+    const now = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const activeCount = orders.filter(o =>
+      o.status === 'pending' || o.status === 'preparing' || o.status === 'shipping'
+    ).length;
+    const cardsHtml = orders.map(o => renderTrackOrderCard(o)).join('');
     resultEl.innerHTML = `
-      <div class="track-not-found">
-        <div class="icon">⚠️</div>
-        <p>ค้นหาไม่สำเร็จ<br><small>${(err && err.message) ? err.message : 'ลองใหม่อีกครั้ง'}</small></p>
-      </div>`;
-    return;
-  }
-
-  if (orders.length === 0) {
-    resultEl.innerHTML = `
-      <div class="track-not-found">
-        <div class="icon">😕</div>
-        <p>ไม่พบออเดอร์ของเบอร์นี้<br><small>ตรวจสอบเบอร์โทรอีกครั้ง หรือยังไม่ได้สั่งซื้อ</small></p>
-      </div>`;
-    return;
-  }
-
-  const now = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  const activeCount = orders.filter(o =>
-    o.status === 'pending' || o.status === 'preparing' || o.status === 'shipping'
-  ).length;
-
-  const cardsHtml = orders.map(o => renderTrackOrderCard(o)).join('');
-
-  resultEl.innerHTML = `
-    <div class="track-list-header">
-      <div class="track-live-badge">🔴 สด · Firebase · อัปเดต ${now}</div>
-      <div class="track-list-summary">
-        พบ <strong>${orders.length}</strong> ออเดอร์
-        ${activeCount > 0 ? `· กำลังดำเนินการ <strong>${activeCount}</strong>` : ''}
+      <div class="track-list-header">
+        <div class="track-live-badge">🔴 สด · Firebase · อัปเดต ${now}</div>
+        <div class="track-list-summary">
+          พบ <strong>${orders.length}</strong> ออเดอร์
+          ${activeCount > 0 ? `· กำลังดำเนินการ <strong>${activeCount}</strong>` : ''}
+        </div>
       </div>
-    </div>
-    <div class="track-orders-list">
-      ${cardsHtml}
-    </div>`;
+      <div class="track-orders-list">
+        ${cardsHtml}
+      </div>`;
+  }
+
+  // 1) real-time ด้วย customerPhoneNorm
+  trackUnsubscribe = db.collection('orders')
+    .where('customerPhoneNorm', '==', norm)
+    .onSnapshot(async (snap) => {
+      let orders = snap.docs.map(d => d.data());
+
+      // ถ้ายังว่าง ลอง fallback ครั้งเดียว (ออเดอร์เก่าที่ไม่มี phoneNorm)
+      if (orders.length === 0 && !resultEl.dataset.fallbackDone) {
+        resultEl.dataset.fallbackDone = '1';
+        try {
+          const legacy = await db.collection('orders')
+            .orderBy('createdAt', 'desc')
+            .limit(200)
+            .get();
+          orders = legacy.docs
+            .map(d => d.data())
+            .filter(o => {
+              const n = o.customerPhoneNorm || normalizePhone(o.customerPhone);
+              return n === norm;
+            });
+        } catch (e) {
+          console.warn('track legacy fallback:', e);
+        }
+      }
+
+      showTrackOrders(orders);
+    }, (err) => {
+      console.error('searchOrder Firebase:', err);
+      resultEl.innerHTML = `
+        <div class="track-not-found">
+          <div class="icon">⚠️</div>
+          <p>ค้นหาไม่สำเร็จ<br><small>${(err && err.message) ? err.message : 'ลองใหม่อีกครั้ง'}</small></p>
+        </div>`;
+    });
 }
 
 // ให้เรียกจากปุ่ม HTML (onclick) ได้แน่นอน
@@ -3138,6 +3138,21 @@ window.searchOrder = searchOrder;
 
 
 // ===== Reset ทั้งหมด (ต้องใส่รหัสผ่าน) =====
+/** ลบเอกสารใน collection ทีละชุด (Firestore batch สูงสุด 500) */
+async function deleteCollectionInChunks(colRef, chunkSize = 400) {
+  let total = 0;
+  while (true) {
+    const snap = await colRef.limit(chunkSize).get();
+    if (snap.empty) break;
+    const batch = db.batch();
+    snap.docs.forEach(d => batch.delete(d.ref));
+    await batch.commit();
+    total += snap.size;
+    if (snap.size < chunkSize) break;
+  }
+  return total;
+}
+
 async function resetAllData() {
   const pw = prompt('กรุณากรอกรหัสผ่านเพื่อรีเซ็ตออเดอร์:\n(รหัสเดียวกับหน้าผู้ขาย)');
   if (pw === null) return;
@@ -3147,33 +3162,47 @@ async function resetAllData() {
     alert('รหัสผ่านไม่ถูกต้อง');
     return;
   }
-  if (!confirm('ยืนยันรีเซ็ตออเดอร์ทั้งหมด?\n\n- ออเดอร์ทั้งหมดจะถูกลบ\n- หมายเลขออเดอร์เริ่มที่ 000 ใหม่\n\n(สินค้าและหมวดหมู่จะไม่ถูกลบ)')) {
+  if (!confirm('ยืนยันรีเซ็ตออเดอร์ทั้งหมด?\n\n- ออเดอร์ทั้งหมดจะถูกลบจาก Firebase\n- หมายเลขออเดอร์เริ่มที่ 000 ใหม่\n- ยอดรายได้จะหายตามออเดอร์ที่ลบ\n\n(สินค้าและหมวดหมู่จะไม่ถูกลบ)')) {
     return;
   }
-
-  ordersCache = [];
 
   if (!firebaseReady || !db) {
     alert('ต้องเชื่อม Firebase ก่อน');
     return;
   }
+
   try {
-    const batch = db.batch();
-    const orderSnap = await db.collection('orders').get();
-    orderSnap.docs.forEach(d => batch.delete(d.ref));
-    batch.set(db.collection('settings').doc('orderCounter'), {
+    // ลบออเดอร์ทั้งหมดทีละชุด (รองรับมากกว่า 500 รายการ)
+    const deleted = await deleteCollectionInChunks(db.collection('orders'), 400);
+
+    // รีเซ็ตตัวนับหมายเลขออเดอร์
+    await db.collection('settings').doc('orderCounter').set({
       value: 0,
       updatedAt: new Date().toISOString()
     }, { merge: true });
-    await batch.commit();
+
+    // เคลียร์ cache ในเครื่อง
+    ordersCache = [];
+    if (typeof trackActiveOrders !== 'undefined') trackActiveOrders = [];
+    if (typeof stopTrackListener === 'function') {
+      try { stopTrackListener(); } catch (_) {}
+    }
+
+    // รีเซ็ตจุดเริ่มนับรายได้ (ถ้ามี)
+    if (typeof setRevenueClearedAt === 'function') {
+      try { setRevenueClearedAt(new Date().toISOString()); } catch (_) {}
+    }
+
+    // รีเฟรช UI
+    if (typeof renderOrders === 'function') renderOrders();
+    if (typeof renderRevenue === 'function') renderRevenue();
+    if (typeof updateOrdersStats === 'function') updateOrdersStats();
+
+    alert('รีเซ็ตออเดอร์เรียบร้อยแล้ว\nลบ ' + deleted + ' ออเดอร์ · หมายเลขเริ่มที่ 000 ใหม่');
   } catch (e) {
     console.error('Firebase reset orders error:', e);
     alert('รีเซ็ตไม่สำเร็จ: ' + (e.message || e));
-    return;
   }
-
-  alert('รีเซ็ตออเดอร์เรียบร้อยแล้ว');
-  renderOrders();
 }
 
 // ===== Init =====
@@ -3184,15 +3213,8 @@ function initBuyer() {
   if (firebaseReady) {
     loadProductsFromFirebase().then(() => renderProducts());
     subscribeProducts(() => renderProducts());
-    subscribeOrders(() => {
-      // อัปเดตหน้าติดตามถ้าเปิดอยู่
-      const trackResult = document.getElementById('track-result');
-      const trackPhone = document.getElementById('track-phone');
-      if (trackResult && trackResult.style.display !== 'none' &&
-          trackPhone?.value.trim()) {
-        searchOrder();
-      }
-    });
+    // ออเดอร์ real-time ผ่าน subscribeOrders — หน้าติดตามใช้ onSnapshot แยกตามเบอร์ (Firebase only)
+    subscribeOrders(() => {});
     loadShopStatusFromFirebase();
     subscribeShopStatus();
   } else {
@@ -3287,7 +3309,7 @@ function initBuyer() {
     modal.addEventListener('click', (e) => {
       if (e.target === modal) {
         modal.classList.remove('show');
-        if (modal.id === 'track-modal') stopTrackPolling();
+        if (modal.id === 'track-modal') stopTrackListener();
       }
     });
   });
