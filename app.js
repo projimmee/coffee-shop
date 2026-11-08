@@ -206,13 +206,13 @@ function updateFirebaseStatusUI(ok, detail) {
   const badge = document.getElementById('firebase-status-badge');
   if (ok) {
     if (live) {
-      live.innerHTML = '<span class="live-dot"></span> Firebase สด';
+      live.innerHTML = '<span class="live-dot"></span> ออนไลน์';
       live.classList.add('is-firebase');
       live.classList.remove('is-local');
     }
     if (sync && detail) sync.textContent = detail;
     if (badge) {
-      badge.textContent = '☁ Firebase';
+      badge.textContent = '🟢 ออนไลน์';
       badge.className = 'firebase-status-badge is-on';
       badge.title = 'เชื่อม Firebase แล้ว ข้อมูลซิงค์ข้ามเครื่อง';
     }
